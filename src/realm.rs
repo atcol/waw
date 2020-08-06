@@ -1,5 +1,6 @@
 use crate::{Error, Session};
 use async_trait::async_trait;
+use log::info;
 use serde::{Deserialize, Serialize};
 
 /// A WoW realm
@@ -16,11 +17,11 @@ impl Realm for Session {
         match res.status() {
             reqwest::StatusCode::OK => {
                 let ahd: AuctionResponse = res.json().await?;
-                println!("{:?}", ahd.auctions.len());
+                info!("{:?}", ahd.auctions.len());
                 Ok(ahd)
             }
             sc => {
-                println!("Unexpected response status code: {:?}", sc);
+                info!("Unexpected response status code: {:?}", sc);
                 Err(Error::AuctionLookup("Auction look-up failed"))
             }
         }
@@ -37,17 +38,18 @@ pub struct ConnectedRealmLink {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct AuctionResponse {
     connected_realm: ConnectedRealmLink,
-    auctions: Vec<Auction>,
+    pub auctions: Vec<Auction>,
 }
 
 /// An individual auction
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Auction {
-    id: u64,
-    item: Item,
-    buyout: Option<u64>,
-    quantity: u16,
-    time_left: AuctionTime,
+    pub id: u64,
+    pub item: Item,
+    pub buyout: Option<u64>,
+    pub unit_price: Option<u64>,
+    pub quantity: u16,
+    pub time_left: AuctionTime,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -60,6 +62,6 @@ pub enum AuctionTime {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Item {
-    id: u64,
+    pub id: u64,
     context: Option<u16>,
 }

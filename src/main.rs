@@ -1,14 +1,19 @@
 use chrono::Utc;
 use clap::Clap;
+use glob::glob;
+use log::info;
 use lzma::compress;
+use redis::AsyncCommands;
+use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
 use rustywow::realm::{AuctionResponse, Realm};
-use rustywow::{get_session, Settings, Error, Opts, Session, SubCmd};
-use serde::ser::Serialize;
+use rustywow::{get_session, Error, Opts, Session, Settings, SubCmd};
+use serde::ser::{Serialize};
+use serde::{Deserialize};
 use std::fs::File;
+use std::io::Read;
 use std::io::Write;
 use tokio::time::{delay_for, Duration};
 use tokio_timer::*;
-use log::{info,};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -28,10 +33,54 @@ async fn main() -> Result<(), Error> {
                 }
             })
             .await;
-        },
+        }
         SubCmd::Load(db) => {
-            info!("Loading to {} from {}", db.pg_string, settings.data_dir);      
-        },
+            info!("Sync'ing dir {} with {:?}", settings.data_dir, db);
+            let client = redis::Client::open(format!("redis://{}/", db.host))
+                .expect("Redis connection failed");
+            let mut con = client
+                .get_async_connection()
+                .await
+                .expect("Redis client unavailable");
+            for entry in
+                glob(&format!("{}/*.fb", settings.data_dir)).expect("Failed to glob data_dir")
+            {
+                match entry {
+                    Ok(path) => {
+                        //AuctionResponse
+                        info!("Processing {:?}", path.display());
+                        let mut in_file = File::open(path).expect("Could not read auction file");
+                        let mut buffer = Vec::new();
+                        // read the whole file
+                        in_file.read_to_end(&mut buffer)?;
+                        let r = flexbuffers::Reader::get_root(buffer.as_slice()).unwrap();
+                        let key = db.schema.clone();
+                        for auc in AuctionResponse::deserialize(r)
+                                .expect("Couldn't deserialize").auctions {
+                            //TODO if buyout, append buyout label and use that val, otherwise use
+                            //unit_price
+                            let my_opts = TsOptions::default()
+                                .retention_time(600000)
+                                .label("item", &auc.item.id.to_string())
+                                .label("quantity", &auc.quantity.to_string())
+                                .label("auction_id", &auc.id.to_string());
+                                //.label("", &format!("{:?}", auc.time_left)),
+                                //.label("buyout", auc.buyout)
+                                //.label("quantity", &auc.quantity.to_string())
+                                //.label("time_left", auc.time_left.to_str())
+                            let create_ts: u64 = con
+                                .ts_add_create(
+                                    key.clone(), 
+                                    "*",
+                                    &auc.buyout.unwrap_or(0).to_string(),
+                                    my_opts)
+                                .await.expect("Could not store item");
+                        }
+                    }
+                    Err(e) => println!("{:?}", e),
+                }
+            }
+        }
     }
     Ok(())
 }

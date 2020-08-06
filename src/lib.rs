@@ -1,7 +1,7 @@
 pub mod realm;
-use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use clap::Clap;
+use log::info;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize)]
@@ -20,19 +20,19 @@ pub struct Settings {
 
     /// The time to delay between re-sync'ing data
     pub delay_mins: u64,
-
 }
 
 impl Settings {
-    
     pub fn new() -> Result<Self, config::ConfigError> {
         let mut settings = config::Config::default();
         settings
             // Add in `./Settings.toml`
-            .merge(config::File::with_name("Settings")).unwrap()
+            .merge(config::File::with_name("Settings"))
+            .unwrap()
             // Add in settings from the environment (with a prefix of APP)
             // E.g. `APP_DEBUG=1 ./target/app` would set the `debug` key
-            .merge(config::Environment::with_prefix("APP")).unwrap();
+            .merge(config::Environment::with_prefix("APP"))
+            .unwrap();
         settings.try_into()
     }
 }
@@ -40,7 +40,6 @@ impl Settings {
 #[derive(Clap, Clone)]
 #[clap(version = "1.0", author = "Alex Collins")]
 pub struct Opts {
-
     /// The command
     #[clap(subcommand)]
     pub cmd: SubCmd,
@@ -48,19 +47,23 @@ pub struct Opts {
 
 #[derive(Clap, Clone)]
 pub enum SubCmd {
-    /// List auction house data
+    /// Continuously download auction house and other game data
     #[clap()]
     Sync,
     /// Load in to the database
     Load(Database),
 }
 
-#[derive(Clap, Clone)]
+#[derive(Clap, Clone, Debug)]
 /// Load the dataset in to the database
 pub struct Database {
-    /// Load the data dumps from `--data-dir` into the database via `pg_string`
+    /// Load the data dumps from `--data-dir` into the redis TS instance
     #[clap(long)]
-    pub pg_string: String,
+    pub host: String,
+
+    /// The schema
+    #[clap(long)]
+    pub schema: String,
 }
 
 /// An period of authenticated interaction with the battle.net APIs
@@ -88,7 +91,7 @@ impl Session {
 
     fn auction_url(&self) -> String {
         let url = format!("https://eu.api.blizzard.com/data/wow/connected-realm/{}/auctions?namespace=dynamic-eu&locale=en_US&access_token={}", self.realm_id, self.auth.access_token);
-        println!("url: {:?}", url);
+        info!("url: {:?}", url);
         url
     }
 }
@@ -109,7 +112,7 @@ pub async fn authenticate(
         .text()
         .await?;
 
-    println!("Response: {:?}", auth);
+    info!("Response: {:?}", auth);
     Ok(serde_json::from_str(&auth).expect("Failed parsing auth response"))
 }
 
