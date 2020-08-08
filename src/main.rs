@@ -1,7 +1,7 @@
 use chrono::Utc;
 use clap::Clap;
 use glob::glob;
-use log::info;
+use log::{info, error};
 use lzma::compress;
 use redis::AsyncCommands;
 use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
@@ -28,7 +28,10 @@ async fn main() -> Result<(), Error> {
             info!("Spawning auction thread");
             tokio::spawn(async move {
                 loop {
-                    run(settings.clone()).await;
+                    match download_auctions(settings.clone()).await {
+                        Err(e) => error!("Failed downloading auctions: {:?}", e),
+                        _ => info!("Download loop completed"),
+                    };
                     delay_for(Duration::from_secs(60 * settings.delay_mins)).await;
                 }
             })
@@ -85,7 +88,7 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn run(settings: Settings) -> Result<(), Error> {
+async fn download_auctions(settings: Settings) -> Result<(), Error> {
     let session = get_session(settings.clone())
         .await
         .expect("Failed to authenticate");
