@@ -1,19 +1,15 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use clap::Clap;
 use glob::glob;
-use log::{info, error};
+use log::{error, info, trace};
 use lzma::compress;
-use redis::AsyncCommands;
-use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
+use redis_ts::{AsyncTsCommands, TsOptions};
 use rustywow::realm::{AuctionResponse, Realm};
-use rustywow::{get_session, Error, Opts, Session, Settings, SubCmd};
-use serde::ser::{Serialize};
-use serde::{Deserialize};
+use rustywow::{get_session, Error, Opts, Settings, SubCmd};
+use serde::ser::Serialize;
 use std::fs::File;
-use std::io::Read;
 use std::io::Write;
 use tokio::time::{delay_for, Duration};
-use tokio_timer::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -37,48 +33,76 @@ async fn main() -> Result<(), Error> {
             })
             .await;
         }
-        SubCmd::Load(db) => {
-            info!("Sync'ing dir {} with {:?}", settings.data_dir, db);
-            let client = redis::Client::open(format!("redis://{}/", db.host))
+        SubCmd::Load => {
+            info!(
+                "Loading dir {} with {}",
+                settings.data_dir, settings.db_host
+            );
+            let client = redis::Client::open(format!("redis://{}/", settings.db_host))
                 .expect("Redis connection failed");
             let mut con = client
                 .get_async_connection()
                 .await
                 .expect("Redis client unavailable");
             for entry in
-                glob(&format!("{}/*.fb", settings.data_dir)).expect("Failed to glob data_dir")
+                glob(&format!("{}/*.json", settings.data_dir)).expect("Failed to glob data_dir")
             {
                 match entry {
                     Ok(path) => {
                         //AuctionResponse
                         info!("Processing {:?}", path.display());
-                        let mut in_file = File::open(path).expect("Could not read auction file");
-                        let mut buffer = Vec::new();
+                        let in_file =
+                            File::open(path.clone()).expect("Could not read auction file");
+                        //let mut buffer = Vec::new();
                         // read the whole file
-                        in_file.read_to_end(&mut buffer)?;
-                        let r = flexbuffers::Reader::get_root(buffer.as_slice()).unwrap();
-                        let key = db.schema.clone();
-                        for auc in AuctionResponse::deserialize(r)
-                                .expect("Couldn't deserialize").auctions {
-                            //TODO if buyout, append buyout label and use that val, otherwise use
-                            //unit_price
-                            let my_opts = TsOptions::default()
+                        //in_file.read_to_end(&mut buffer)?;
+                        //let r = flexbuffers::Reader::get_root(buffer.as_slice()).unwrap();
+                        let rfc3339 = DateTime::parse_from_rfc3339(
+                            path.file_stem().unwrap().to_str().unwrap(),
+                        )
+                        .expect("Invalid date string from filename");
+                        let ar: AuctionResponse =
+                            serde_json::from_reader(in_file).expect("Couldn't deserialize");
+
+                        for auc in ar.auctions {
+                            trace!("Creating against ts {}: {:?}", rfc3339.timestamp(), auc);
+                            let key = format!("auction:{}:{}:{}",
+                                 &auc.id.to_string(),
+                                 &auc.item.id.to_string(),
+                                 &auc.quantity.to_string()
+                                 //&auc.time_left);
+                            );
+                            let mut my_opts = TsOptions::default()
                                 .retention_time(600000)
+                                .label("auction_id", &auc.id.to_string())
                                 .label("item", &auc.item.id.to_string())
-                                .label("quantity", &auc.quantity.to_string())
-                                .label("auction_id", &auc.id.to_string());
-                                //.label("", &format!("{:?}", auc.time_left)),
-                                //.label("buyout", auc.buyout)
-                                //.label("quantity", &auc.quantity.to_string())
-                                //.label("time_left", auc.time_left.to_str())
-                            let create_ts: u64 = con
-                                .ts_add_create(
-                                    key.clone(), 
-                                    "*",
-                                    &auc.buyout.unwrap_or(0).to_string(),
-                                    my_opts)
-                                .await.expect("Could not store item");
+                                .label("quantity", &auc.quantity.to_string());
+                                //.label("time_left", &format!("{}", &auc.time_left));
+                            let create_ts = if let Some(buyout) = auc.buyout {
+                                my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
+                                con.ts_add_create(
+                                        key,
+                                        rfc3339.timestamp(),
+                                        &buyout.to_string(),
+                                        my_opts,
+                                    )
+                                    .await
+                                    .expect("Could not store item");
+                            } else {
+                                if let Some(unit_price) = auc.unit_price {
+                                    my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
+                                    con.ts_add_create(
+                                            key,
+                                            rfc3339.timestamp(),
+                                            &unit_price.to_string(),
+                                            my_opts,
+                                        )
+                                        .await
+                                        .expect("Could not store item");
+                                }
+                            }
                         }
+                        info!("Finished {:?}", path.display());
                     }
                     Err(e) => println!("{:?}", e),
                 }
@@ -106,8 +130,11 @@ async fn save_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Er
     let mut raw = File::create(format!("{}/{}.fb", data_dir, timestamp.to_string()))?;
     raw.write_all(s.view())?;
 
+    let json = File::create(format!("{}/{}.json", data_dir, timestamp.to_string()))?;
+    serde_json::to_writer(json, auc)?;
+
     let mut compressed = File::create(format!("{}/{}.7z", data_dir, timestamp.to_string()))?;
-    compressed.write_all(&compress(s.view(), 9).expect("Failed to compress"))?;
+    compressed.write_all(&compress(&serde_json::to_vec(auc)?, 9).expect("Failed to compress"))?;
     info!("Auctions saved {}", timestamp.to_string());
     Ok(())
 }

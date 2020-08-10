@@ -2,6 +2,7 @@ use crate::{Error, Session};
 use async_trait::async_trait;
 use log::info;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// A WoW realm
 #[async_trait]
@@ -58,6 +59,12 @@ pub enum AuctionTime {
     MEDIUM,
     LONG,
     VERY_LONG,
+}
+
+impl fmt::Display for AuctionTime {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

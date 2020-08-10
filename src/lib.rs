@@ -20,6 +20,15 @@ pub struct Settings {
 
     /// The time to delay between re-sync'ing data
     pub delay_mins: u64,
+
+    /// Whether to save to fb or not
+    pub save_flexbuffer: bool,
+
+    /// The hostname for the redis database
+    pub db_host: String,
+
+    /// The redis database name
+    pub db_schema: String,
 }
 
 impl Settings {
@@ -51,19 +60,7 @@ pub enum SubCmd {
     #[clap()]
     Sync,
     /// Load in to the database
-    Load(Database),
-}
-
-#[derive(Clap, Clone, Debug)]
-/// Load the dataset in to the database
-pub struct Database {
-    /// Load the data dumps from `--data-dir` into the redis TS instance
-    #[clap(long)]
-    pub host: String,
-
-    /// The schema
-    #[clap(long)]
-    pub schema: String,
+    Load,
 }
 
 /// An period of authenticated interaction with the battle.net APIs
@@ -161,5 +158,11 @@ impl From<std::io::Error> for Error {
 impl From<config::ConfigError> for Error {
     fn from(e: config::ConfigError) -> Self {
         Error::ConfigError(format!("Configuration error - {:?}", e))
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::IOError(format!("JSON serialisation error - {:?}", e))
     }
 }
