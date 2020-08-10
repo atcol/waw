@@ -8,7 +8,8 @@ all : build test
 
 .PHONY : ubuntu
 ubuntu : 
-	sudo apt-get install vflib3 vflib3-dev cmake liblzma-dev
+	sudo apt install curl make build-essential libssl-dev x11-dev vflib3 vflib3-dev liblzma-dev liblzma-dev cmake libexpat1-dev
+
 
 .PHONY: init
 init :
