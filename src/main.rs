@@ -124,7 +124,7 @@ async fn download_auctions(settings: Settings) -> Result<(), Error> {
 
 async fn save_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Error> {
     info!("Saving auctions");
-
+    let timestamp = Utc::now().format("%+");
     let json = File::create(format!("{}/{}.json", data_dir, timestamp.to_string()))?;
     serde_json::to_writer(json, auc)?;
 
