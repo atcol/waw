@@ -1,0 +1,31 @@
+[package]
+name = "rustywow"
+version = "0.1.0"
+authors = ["Alex <squidnyan@pm.me>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proptest = "0.10.0"
+actix-web = "2.0.0"
+tokio = { version = "0.2.21", features = ["full"] }
+serde_json = "1.0.56"
+reqwest = { version = "0.10.6", features = ["json"] }
+clap = "3.0.0-beta.1"
+oauth2 = { version = "3.0.0", features = ["futures-03", "reqwest-010"] }
+url = "2.1.1"
+serde = "1.0.114"
+flexbuffers = "0.1.1"
+chrono = "0.4.13"
+async-trait = "0.1.36"
+anyhow = "1.0.31"
+iced = "0.1.1"
+rust-lzma = "0.5.1"
+tokio-timer = "0.2.13"
+config = "0.10.1"
+env_logger = "0.7.1"
+log = "0.4.11"
+glob = "0.3.0"
+redis_ts = "0.1.0"
+redis = "0.16.0"
