@@ -58,9 +58,16 @@ pub struct Opts {
 pub enum SubCmd {
     /// Continuously download auction house and other game data
     #[clap()]
-    Sync,
+    Sync(SyncOpts),
     /// Load in to the database
     Load,
+}
+
+#[derive(Clap, Clone)]
+pub struct SyncOpts {
+    /// Continuously download auction house and other game data
+    #[clap(long)]
+    pub count: Option<u32>,
 }
 
 /// An period of authenticated interaction with the battle.net APIs

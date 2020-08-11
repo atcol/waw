@@ -20,15 +20,23 @@ async fn main() -> Result<(), Error> {
     let settings = Settings::new()?;
     let opts = Opts::parse();
     match opts.cmd {
-        SubCmd::Sync => {
+        SubCmd::Sync(sopts) => {
             info!("Spawning auction thread");
             tokio::spawn(async move {
+                let mut count: u32 = 1;
+                let max: u32 = sopts.count.unwrap_or(0);
                 loop {
-                    match download_auctions(settings.clone()).await {
-                        Err(e) => error!("Failed downloading auctions: {:?}", e),
-                        _ => info!("Download loop completed"),
-                    };
-                    delay_for(Duration::from_secs(60 * settings.delay_mins)).await;
+                    let iterate = count < max || max == 0;
+                    if iterate {
+                        match download_auctions(settings.clone()).await {
+                            Err(e) => error!("Failed downloading auctions: {:?}", e),
+                            _ => info!("Download loop completed"),
+                        };
+                        delay_for(Duration::from_secs(60 * settings.delay_mins)).await;
+                        count += 1;
+                    } else {
+                        break;
+                    }
                 }
             })
             .await;
@@ -53,10 +61,6 @@ async fn main() -> Result<(), Error> {
                         info!("Processing {:?}", path.display());
                         let in_file =
                             File::open(path.clone()).expect("Could not read auction file");
-                        //let mut buffer = Vec::new();
-                        // read the whole file
-                        //in_file.read_to_end(&mut buffer)?;
-                        //let r = flexbuffers::Reader::get_root(buffer.as_slice()).unwrap();
                         let rfc3339 = DateTime::parse_from_rfc3339(
                             path.file_stem().unwrap().to_str().unwrap(),
                         )
@@ -66,21 +70,16 @@ async fn main() -> Result<(), Error> {
 
                         for auc in ar.auctions {
                             trace!("Creating against ts {}: {:?}", rfc3339.timestamp(), auc);
-                            let key = format!("auction:{}:{}:{}",
-                                 &auc.id.to_string(),
-                                 &auc.item.id.to_string(),
-                                 &auc.quantity.to_string()
-                                 //&auc.time_left);
-                            );
+                            let key = format!("item:{}", &auc.item.id.to_string(),);
                             let mut my_opts = TsOptions::default()
                                 .retention_time(600000)
                                 .label("auction_id", &auc.id.to_string())
                                 .label("item", &auc.item.id.to_string())
                                 .label("quantity", &auc.quantity.to_string());
-                                //.label("time_left", &format!("{}", &auc.time_left));
-                           if let Some(buyout) = auc.buyout {
+                            if let Some(buyout) = auc.buyout {
                                 my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
-                                let x: u64 = con.ts_add_create(
+                                let x: u64 = con
+                                    .ts_add_create(
                                         key,
                                         rfc3339.timestamp(),
                                         &buyout.to_string(),
@@ -91,7 +90,8 @@ async fn main() -> Result<(), Error> {
                             } else {
                                 if let Some(unit_price) = auc.unit_price {
                                     my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
-                                    let x: u64 = con.ts_add_create(
+                                    let x: u64 = con
+                                        .ts_add_create(
                                             key,
                                             rfc3339.timestamp(),
                                             &unit_price.to_string(),
