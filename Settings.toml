@@ -1,7 +1,7 @@
 realm_id = 1403
 client_id = "4b0ececf9c4248e5be5296669b39adda"
 client_secret = "3GBM4ZkzwsPsoC6mNxMfbuGlx4O3f2Dm"
-data_dir = "./data"
+data_dir = "/mnt/data/Data/wow-auctions/"
 delay_mins = 5
 
 save_flexbuffer = false
