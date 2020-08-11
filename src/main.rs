@@ -78,9 +78,9 @@ async fn main() -> Result<(), Error> {
                                 .label("item", &auc.item.id.to_string())
                                 .label("quantity", &auc.quantity.to_string());
                                 //.label("time_left", &format!("{}", &auc.time_left));
-                            let create_ts = if let Some(buyout) = auc.buyout {
+                           if let Some(buyout) = auc.buyout {
                                 my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
-                                con.ts_add_create(
+                                let x: u64 = con.ts_add_create(
                                         key,
                                         rfc3339.timestamp(),
                                         &buyout.to_string(),
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Error> {
                             } else {
                                 if let Some(unit_price) = auc.unit_price {
                                     my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
-                                    con.ts_add_create(
+                                    let x: u64 = con.ts_add_create(
                                             key,
                                             rfc3339.timestamp(),
                                             &unit_price.to_string(),
@@ -124,11 +124,6 @@ async fn download_auctions(settings: Settings) -> Result<(), Error> {
 
 async fn save_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Error> {
     info!("Saving auctions");
-    let mut s = flexbuffers::FlexbufferSerializer::new();
-    auc.serialize(&mut s).unwrap();
-    let timestamp = Utc::now().format("%+");
-    let mut raw = File::create(format!("{}/{}.fb", data_dir, timestamp.to_string()))?;
-    raw.write_all(s.view())?;
 
     let json = File::create(format!("{}/{}.json", data_dir, timestamp.to_string()))?;
     serde_json::to_writer(json, auc)?;
