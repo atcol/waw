@@ -3,9 +3,10 @@ use clap::Clap;
 use glob::glob;
 use log::{error, info, trace};
 use lzma::compress;
-use redis_ts::{AsyncTsCommands, TsOptions};
-use rustywow::realm::{AuctionResponse, Realm};
-use rustywow::{get_session, Error, Opts, Settings, SubCmd};
+use redis::aio::{Connection};
+use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
+use waw::realm::{Auction, AuctionResponse, Realm};
+use waw::{get_session, Error, Opts, Settings, SubCmd};
 use serde::ser::Serialize;
 use std::fs::File;
 use std::io::Write;
@@ -69,38 +70,7 @@ async fn main() -> Result<(), Error> {
                             serde_json::from_reader(in_file).expect("Couldn't deserialize");
 
                         for auc in ar.auctions {
-                            trace!("Creating against ts {}: {:?}", rfc3339.timestamp(), auc);
-                            let key = format!("item:{}", &auc.item.id.to_string(),);
-                            let mut my_opts = TsOptions::default()
-                                .retention_time(600000)
-                                .label("auction_id", &auc.id.to_string())
-                                .label("item", &auc.item.id.to_string())
-                                .label("quantity", &auc.quantity.to_string());
-                            if let Some(buyout) = auc.buyout {
-                                my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
-                                let x: u64 = con
-                                    .ts_add_create(
-                                        key,
-                                        rfc3339.timestamp(),
-                                        &buyout.to_string(),
-                                        my_opts,
-                                    )
-                                    .await
-                                    .expect("Could not store item");
-                            } else {
-                                if let Some(unit_price) = auc.unit_price {
-                                    my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
-                                    let x: u64 = con
-                                        .ts_add_create(
-                                            key,
-                                            rfc3339.timestamp(),
-                                            &unit_price.to_string(),
-                                            my_opts,
-                                        )
-                                        .await
-                                        .expect("Could not store item");
-                                }
-                            }
+                            store_auction(&mut con, rfc3339.timestamp(), &auc);
                         }
                         info!("Finished {:?}", path.display());
                     }
@@ -112,17 +82,53 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
+async fn store_auction(con: &mut Connection, ts: i64, auc: &Auction) -> Result<(), redis::RedisError> {
+    trace!("Creating against ts {}: {:?}", ts, auc);
+    let key = format!("item:{}", &auc.item.id.to_string(),);
+    let mut my_opts = TsOptions::default()
+        .retention_time(600000)
+        .label("auction_id", &auc.id.to_string())
+        .label("item", &auc.item.id.to_string())
+        .label("quantity", &auc.quantity.to_string());
+    if let Some(buyout) = auc.buyout {
+        my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
+        let x: u64 = con
+            .ts_add_create(
+                key,
+                ts,
+                &buyout.to_string(),
+                my_opts,
+            )
+            .await
+            .expect("Could not store item");
+    } else {
+        if let Some(unit_price) = auc.unit_price {
+            my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
+            let x: u64 = con
+                .ts_add_create(
+                    key,
+                    ts,
+                    &unit_price.to_string(),
+                    my_opts,
+                )
+                .await
+                .expect("Could not store item");
+        }
+    }
+    Ok(())
+}
+
 async fn download_auctions(settings: Settings) -> Result<(), Error> {
     let session = get_session(settings.clone())
         .await
         .expect("Failed to authenticate");
     info!("Loading auctions");
     let auc = session.auctions().await?;
-    save_auctions(settings.data_dir.clone().to_string(), &auc).await?;
+    archive_auctions(settings.data_dir.clone().to_string(), &auc).await?;
     Ok(())
 }
 
-async fn save_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Error> {
+async fn archive_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Error> {
     info!("Saving auctions");
     let timestamp = Utc::now().format("%+");
     let json = File::create(format!("{}/{}.json", data_dir, timestamp.to_string()))?;

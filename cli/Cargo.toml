@@ -1,5 +1,5 @@
 [package]
-name = "rustywow"
+name = "waw"
 version = "0.1.0"
 authors = ["Alex <squidnyan@pm.me>"]
 edition = "2018"
