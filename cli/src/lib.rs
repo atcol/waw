@@ -173,3 +173,9 @@ impl From<serde_json::Error> for Error {
         Error::IOError(format!("JSON serialisation error - {:?}", e))
     }
 }
+
+impl From<redis::RedisError> for Error {
+    fn from(e: redis::RedisError) -> Self {
+        Error::IOError(format!("Redis error - {:?}", e))
+    }
+}

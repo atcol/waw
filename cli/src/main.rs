@@ -3,14 +3,15 @@ use clap::Clap;
 use glob::glob;
 use log::{error, info, trace};
 use lzma::compress;
-use redis::aio::{Connection};
+use redis::aio::Connection;
 use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
-use waw::realm::{Auction, AuctionResponse, Realm};
-use waw::{get_session, Error, Opts, Settings, SubCmd};
-use serde::ser::Serialize;
 use std::fs::File;
 use std::io::Write;
+use tokio::stream::{self, StreamExt};
+use tokio::sync::mpsc::channel;
 use tokio::time::{delay_for, Duration};
+use waw::realm::{Auction, AuctionResponse, Realm};
+use waw::{get_session, Error, Opts, Settings, SubCmd};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -53,64 +54,91 @@ async fn main() -> Result<(), Error> {
                 .get_async_connection()
                 .await
                 .expect("Redis client unavailable");
-            for entry in
-                glob(&format!("{}/*.json", settings.data_dir)).expect("Failed to glob data_dir")
-            {
-                match entry {
-                    Ok(path) => {
-                        //AuctionResponse
-                        info!("Processing {:?}", path.display());
-                        let in_file =
-                            File::open(path.clone()).expect("Could not read auction file");
-                        let rfc3339 = DateTime::parse_from_rfc3339(
-                            path.file_stem().unwrap().to_str().unwrap(),
-                        )
-                        .expect("Invalid date string from filename");
-                        let ar: AuctionResponse =
-                            serde_json::from_reader(in_file).expect("Couldn't deserialize");
+            let mut auc_stream = tokio::stream::iter(glob(&format!("{}/*.json", settings.data_dir))
+                .expect("Cannot glob data_dir")) 
+                .filter_map(valid_path)
+                .map(parse_file);
 
-                        for auc in ar.auctions {
-                            store_auction(&mut con, rfc3339.timestamp(), &auc);
+            let (mut tx, mut rx) = channel(100);
+
+            tokio::spawn(async move {
+                loop {
+                    match auc_stream.next().await {
+                        Some(Ok((ar, ts))) => {
+                            info!("Received {}", ts);
+                            for auc in ar.auctions {
+                                if let Err(_) = tx.send((auc, ts)).await {
+                                    error!("Receiver dropped: {:?}", ts);
+                                    return;
+                                }
+                            }
+                            info!("Done {}", ts);
+                        },
+                        Some(Err(e)) => {
+                            error!("Failed parsing auction: {:?}", e);
+                            break;
+                        },
+                        None => {
+                            info!("Stream finished");
+                            break;
                         }
-                        info!("Finished {:?}", path.display());
                     }
-                    Err(e) => println!("{:?}", e),
                 }
+            });
+
+            while let Some((auc, ts)) = rx.recv().await {
+                store_auction(&mut con, ts, &auc).await?;
             }
         }
     }
     Ok(())
 }
 
-async fn store_auction(con: &mut Connection, ts: i64, auc: &Auction) -> Result<(), redis::RedisError> {
-    trace!("Creating against ts {}: {:?}", ts, auc);
+fn valid_path(f: Result<std::path::PathBuf, glob::GlobError>) -> Option<std::path::PathBuf> {
+    match f {
+        Ok(path) => {
+            Some(path)
+        },
+        Err(e) => {
+            error!("Error globbing {:?}", e);
+            None
+        }
+    }
+}
+
+fn parse_file(p: std::path::PathBuf) -> Result<(AuctionResponse, i64), Error> {
+    info!("Loading {:?}", p.clone().display());
+    let in_file =
+        File::open(p.clone()).expect("Could not read auction file");
+    let rfc3339 = DateTime::parse_from_rfc3339(
+        p.file_stem().unwrap().to_str().unwrap(),
+    ).expect("Invalid date string from filename");
+    Ok((serde_json::from_reader(in_file).expect("Failure parsing file"), rfc3339.timestamp()))
+}
+
+async fn store_auction(
+    con: &mut Connection,
+    ts: i64,
+    auc: &Auction,
+) -> Result<(), redis::RedisError> {
     let key = format!("item:{}", &auc.item.id.to_string(),);
     let mut my_opts = TsOptions::default()
         .retention_time(600000)
         .label("auction_id", &auc.id.to_string())
         .label("item", &auc.item.id.to_string())
         .label("quantity", &auc.quantity.to_string());
-    if let Some(buyout) = auc.buyout {
-        my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
-        let x: u64 = con
-            .ts_add_create(
-                key,
-                ts,
-                &buyout.to_string(),
-                my_opts,
-            )
-            .await
-            .expect("Could not store item");
+    if let Some(_) = auc.buyout {
+        //my_opts = my_opts.label("buyout", "1").label("unit_price", "0");
+        //let x: u64 = con
+        //    .ts_add_create(key, ts, &buyout.to_string(), my_opts)
+        //    .await
+        //    .expect("Could not store item");
+        trace!("Ignoring buyout for {}", auc.item.id);
     } else {
         if let Some(unit_price) = auc.unit_price {
-            my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
+            //my_opts = my_opts.label("buyout", "0").label("unit_price", "1");
             let x: u64 = con
-                .ts_add_create(
-                    key,
-                    ts,
-                    &unit_price.to_string(),
-                    my_opts,
-                )
+                .ts_add_create(key, ts, &unit_price.to_string(), my_opts)
                 .await
                 .expect("Could not store item");
         }
@@ -129,7 +157,7 @@ async fn download_auctions(settings: Settings) -> Result<(), Error> {
 }
 
 async fn archive_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Error> {
-    info!("Saving auctions");
+    info!("Saving auctions to {:?}", data_dir);
     let timestamp = Utc::now().format("%+");
     let json = File::create(format!("{}/{}.json", data_dir, timestamp.to_string()))?;
     serde_json::to_writer(json, auc)?;
