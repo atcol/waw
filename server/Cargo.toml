@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["Alex <squidnyan@pm.me>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+actix-web = "2.0.0"
+log = "0.4.11"
+redis_ts = "0.1.0"
+redis = "0.16.0"
+actix-rt = "1.1.1"
+waw = { path = "../cli" }
+serde = "1.0.114"
