@@ -65,9 +65,8 @@ pub enum SubCmd {
 
 #[derive(Clap, Clone)]
 pub struct SyncOpts {
-    /// Continuously download auction house and other game data
-    #[clap(long)]
-    pub count: Option<u32>,
+    /// Don't load in to the database on-the-fly
+    pub no_load: Option<bool>,
 }
 
 /// An period of authenticated interaction with the battle.net APIs

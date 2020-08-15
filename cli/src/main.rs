@@ -3,6 +3,7 @@ use clap::Clap;
 use glob::glob;
 use log::{error, info, trace};
 use lzma::compress;
+use redis::{Client, RedisError};
 use redis::aio::Connection;
 use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
 use std::fs::File;
@@ -24,21 +25,26 @@ async fn main() -> Result<(), Error> {
     match opts.cmd {
         SubCmd::Sync(sopts) => {
             info!("Spawning auction thread");
+            let (_, mut con) = redis_connect(&settings).await?;
             tokio::spawn(async move {
-                let mut count: u32 = 1;
-                let max: u32 = sopts.count.unwrap_or(0);
                 loop {
-                    let iterate = count < max || max == 0;
-                    if iterate {
-                        match download_auctions(settings.clone()).await {
-                            Err(e) => error!("Failed downloading auctions: {:?}", e),
-                            _ => info!("Download loop completed"),
-                        };
-                        delay_for(Duration::from_secs(60 * settings.delay_mins)).await;
-                        count += 1;
-                    } else {
-                        break;
-                    }
+                    match download_auctions(settings.clone()).await {
+                        Err(e) => error!("Failed downloading auctions: {:?}", e),
+                        Ok((ar, ts_str)) => {
+                            let rfc3339 = DateTime::parse_from_rfc3339(&ts_str)
+                                .expect("Invalid date string from filename");
+                            info!("Download loop completed: {}", ts_str);
+
+                            if sopts.no_load.unwrap_or(true) {
+                                info!("Storing: {}", ts_str);
+                                for auc in ar.auctions {
+                                    store_auction(&mut con, rfc3339.timestamp(), &auc).await;
+                                }
+                            }
+                            info!("Finished: {}", ts_str);
+                        },
+                    };
+                    delay_for(Duration::from_secs(60 * settings.delay_mins)).await;
                 }
             })
             .await;
@@ -48,16 +54,12 @@ async fn main() -> Result<(), Error> {
                 "Loading dir {} with {}",
                 settings.data_dir, settings.db_host
             );
-            let client = redis::Client::open(format!("redis://{}/", settings.db_host))
-                .expect("Redis connection failed");
-            let mut con = client
-                .get_async_connection()
-                .await
-                .expect("Redis client unavailable");
-            let mut auc_stream = tokio::stream::iter(glob(&format!("{}/*.json", settings.data_dir))
-                .expect("Cannot glob data_dir")) 
-                .filter_map(valid_path)
-                .map(parse_file);
+            let (_, mut con) = redis_connect(&settings).await?;
+            let mut auc_stream = tokio::stream::iter(
+                glob(&format!("{}/*.json", settings.data_dir)).expect("Cannot glob data_dir"),
+            )
+            .filter_map(valid_path)
+            .map(parse_file);
 
             let (mut tx, mut rx) = channel(100);
 
@@ -73,11 +75,11 @@ async fn main() -> Result<(), Error> {
                                 }
                             }
                             info!("Done {}", ts);
-                        },
+                        }
                         Some(Err(e)) => {
                             error!("Failed parsing auction: {:?}", e);
                             break;
-                        },
+                        }
                         None => {
                             info!("Stream finished");
                             break;
@@ -96,9 +98,7 @@ async fn main() -> Result<(), Error> {
 
 fn valid_path(f: Result<std::path::PathBuf, glob::GlobError>) -> Option<std::path::PathBuf> {
     match f {
-        Ok(path) => {
-            Some(path)
-        },
+        Ok(path) => Some(path),
         Err(e) => {
             error!("Error globbing {:?}", e);
             None
@@ -108,12 +108,13 @@ fn valid_path(f: Result<std::path::PathBuf, glob::GlobError>) -> Option<std::pat
 
 fn parse_file(p: std::path::PathBuf) -> Result<(AuctionResponse, i64), Error> {
     info!("Loading {:?}", p.clone().display());
-    let in_file =
-        File::open(p.clone()).expect("Could not read auction file");
-    let rfc3339 = DateTime::parse_from_rfc3339(
-        p.file_stem().unwrap().to_str().unwrap(),
-    ).expect("Invalid date string from filename");
-    Ok((serde_json::from_reader(in_file).expect("Failure parsing file"), rfc3339.timestamp()))
+    let in_file = File::open(p.clone()).expect("Could not read auction file");
+    let rfc3339 = DateTime::parse_from_rfc3339(p.file_stem().unwrap().to_str().unwrap())
+        .expect("Invalid date string from filename");
+    Ok((
+        serde_json::from_reader(in_file).expect("Failure parsing file"),
+        rfc3339.timestamp(),
+    ))
 }
 
 async fn store_auction(
@@ -146,17 +147,17 @@ async fn store_auction(
     Ok(())
 }
 
-async fn download_auctions(settings: Settings) -> Result<(), Error> {
+async fn download_auctions(settings: Settings) -> Result<(AuctionResponse, String), Error> {
     let session = get_session(settings.clone())
         .await
         .expect("Failed to authenticate");
     info!("Loading auctions");
     let auc = session.auctions().await?;
-    archive_auctions(settings.data_dir.clone().to_string(), &auc).await?;
-    Ok(())
+    let ts = archive_auctions(settings.data_dir.clone().to_string(), &auc).await?;
+    Ok((auc, ts))
 }
 
-async fn archive_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(), Error> {
+async fn archive_auctions(data_dir: String, auc: &AuctionResponse) -> Result<String, Error> {
     info!("Saving auctions to {:?}", data_dir);
     let timestamp = Utc::now().format("%+");
     let json = File::create(format!("{}/{}.json", data_dir, timestamp.to_string()))?;
@@ -165,5 +166,13 @@ async fn archive_auctions(data_dir: String, auc: &AuctionResponse) -> Result<(),
     let mut compressed = File::create(format!("{}/{}.7z", data_dir, timestamp.to_string()))?;
     compressed.write_all(&compress(&serde_json::to_vec(auc)?, 9).expect("Failed to compress"))?;
     info!("Auctions saved {}", timestamp.to_string());
-    Ok(())
+    Ok(timestamp.to_string())
+}
+
+async fn redis_connect(
+    settings: &Settings,
+) -> Result<(Client, Connection), RedisError> {
+    let client: Client = Client::open(format!("redis://{}/", settings.db_host)).unwrap();
+    let con = client.get_async_connection().await?;
+    Ok((client, con))
 }
