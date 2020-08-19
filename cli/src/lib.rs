@@ -59,7 +59,7 @@ pub enum SubCmd {
     /// Continuously download auction house and other game data
     #[clap()]
     Sync(SyncOpts),
-    /// Load in to the database
+    /// Load to a Redis instance using raw protocol messages (with `redis-cli --pipe`)
     Load,
 }
 

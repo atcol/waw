@@ -3,6 +3,7 @@ use clap::Clap;
 use glob::glob;
 use log::{error, info, trace};
 use lzma::compress;
+use itertools::{*};
 use redis::{Client, RedisError};
 use redis::aio::Connection;
 use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
@@ -35,11 +36,15 @@ async fn main() -> Result<(), Error> {
                                 .expect("Invalid date string from filename");
                             info!("Download loop completed: {}", ts_str);
 
-                            if sopts.no_load.unwrap_or(true) {
+                            if !sopts.no_load.unwrap_or(false) && ar.auctions.len() > 0 {
                                 info!("Storing: {}", ts_str);
-                                for auc in ar.auctions {
-                                    store_auction(&mut con, rfc3339.timestamp(), &auc).await;
-                                }
+                                let mut unit_price_aucs: Vec<&Auction> = ar.auctions.iter()
+                                    .filter(|a| a.unit_price.is_some())
+                                    .collect();
+                                unit_price_aucs.sort_by(|a,b| a.unit_price.unwrap().cmp(&b.unit_price.unwrap()));
+                                // for auc in unit_price_aucs {
+                                store_auction(&mut con, rfc3339.timestamp(), &unit_price_aucs.first().unwrap()).await;
+                                // }
                             }
                             info!("Finished: {}", ts_str);
                         },
@@ -89,10 +94,45 @@ async fn main() -> Result<(), Error> {
             });
 
             while let Some((auc, ts)) = rx.recv().await {
-                store_auction(&mut con, ts, &auc).await?;
+                //store_auction(&mut con, ts, &auc).await?;
+                if auc.unit_price.is_some()  {
+                    dump_redis_proto(&auc, ts);
+                }
             }
         }
     }
+    Ok(())
+}
+
+async fn dump_redis_proto(auc: &Auction, ts: i64) -> Result<(), redis::RedisError> {
+    let mut opt = String::new();
+    let key = format!("item:{}", &auc.item.id.to_string());
+        //.retention_time(600000)
+        //.label("auction_id", &auc.id.to_string())
+        //.label("item", &auc.item.id.to_string())
+        //.label("quantity", &auc.quantity.to_string());
+    let auc_id = &auc.item.id.to_string();
+    let item_id = &auc.item.id.to_string();
+    let quant = &auc.quantity.to_string();
+    let val = &auc.unit_price.unwrap().to_string();
+    let tss = &ts.to_string();
+    let cmd = vec!["TS.ADD",
+        &key,
+        tss,
+        val,
+        "labels",
+        "auction_id",
+        auc_id,
+        "item",
+        item_id,
+        "quantity",
+        quant
+    ];
+    opt.push_str(&format!("*{}\r\n", cmd.len()));
+    for arg in cmd {
+        opt.push_str(&format!("${}\r\n{}\r\n", arg.len(), arg));
+    }
+    println!("{}", opt);
     Ok(())
 }
 
@@ -123,7 +163,7 @@ async fn store_auction(
     auc: &Auction,
 ) -> Result<(), redis::RedisError> {
     let key = format!("item:{}", &auc.item.id.to_string(),);
-    let mut my_opts = TsOptions::default()
+    let my_opts = TsOptions::default()
         .retention_time(600000)
         .label("auction_id", &auc.id.to_string())
         .label("item", &auc.item.id.to_string())
