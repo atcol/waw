@@ -26,22 +26,20 @@ pub struct Settings {
 
     /// The hostname for the redis database
     pub db_host: String,
-
-    /// The redis database name
-    pub db_schema: String,
 }
 
 impl Settings {
     pub fn new() -> Result<Self, config::ConfigError> {
+        Self::from("Settings")
+    }
+    pub fn from(file: &'static str) -> Result<Self, config::ConfigError> {
         let mut settings = config::Config::default();
         settings
             // Add in `./Settings.toml`
-            .merge(config::File::with_name("Settings"))
-            .unwrap()
+            .merge(config::File::with_name(&file))?
             // Add in settings from the environment (with a prefix of APP)
             // E.g. `APP_DEBUG=1 ./target/app` would set the `debug` key
-            .merge(config::Environment::with_prefix("APP"))
-            .unwrap();
+            .merge(config::Environment::with_prefix("WAW"))?;
         settings.try_into()
     }
 }
@@ -66,7 +64,8 @@ pub enum SubCmd {
 #[derive(Clap, Clone)]
 pub struct SyncOpts {
     /// Don't load in to the database on-the-fly
-    pub no_load: Option<bool>,
+    #[clap(short, long)]
+    pub no_load: bool,
 }
 
 /// An period of authenticated interaction with the battle.net APIs

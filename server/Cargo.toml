@@ -5,10 +5,13 @@ authors = ["Alex <squidnyan@pm.me>"]
 edition = "2018"
 
 [dependencies]
-actix-web = "2.0.0"
 log = "0.4.11"
 redis_ts = "0.1.0"
 redis = "0.16.0"
 actix-rt = "1.1.1"
 waw = { path = "../cli" }
 serde = "1.0.114"
+csv = "1.1.3"
+env_logger = "0.7.1"
+actix-web = "2.0.0"
+actix = "0.9.0"

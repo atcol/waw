@@ -46,7 +46,7 @@ pub struct AuctionResponse {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Auction {
     pub id: u64,
-    pub item: Item,
+    pub item: ItemIden,
     pub buyout: Option<u64>,
     pub unit_price: Option<u64>,
     pub quantity: u16,
@@ -68,7 +68,13 @@ impl fmt::Display for AuctionTime {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Item {
+pub struct ItemIden {
     pub id: u64,
     context: Option<u16>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct Item {
+    pub id: u64,
+    pub en_us: String,
 }
