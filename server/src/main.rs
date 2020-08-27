@@ -50,6 +50,11 @@ impl actix::Actor for ItemActor {
 #[rtype(result = "Option<Item>")]
 struct GetItem(u64);
 
+#[derive(Deserialize)]
+struct ItemSearch {
+    q: String,
+}
+
 impl Handler<GetItem> for ItemActor {
     type Result = Option<Item>;
 
@@ -58,6 +63,14 @@ impl Handler<GetItem> for ItemActor {
         unsafe { info!("There are {} items", ITEMS.len()); }
         unsafe { ITEMS.iter().filter(|x| msg.0 == x.id).map(|x| x.en_us.clone()).next() }.map(|l| Item { id: msg.0, en_us: l })
     }
+}
+
+async fn get_symbols(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
+    HttpResponse::Ok().json(vec![109119, 109076, 114999])
+}
+
+async fn search_items(server: web::Data<Server>, search: web::Query<ItemSearch>) -> HttpResponse {
+    unsafe { HttpResponse::Ok().json::<Vec<&Item>>(ITEMS.iter().filter(|x| x.en_us == search.q).map(|x| x.clone()).collect()) }
 }
 
 async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
@@ -141,11 +154,16 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .wrap(middleware::Compress::default())
+            .wrap(actix_cors::Cors::new()
+                .send_wildcard()
+                .allowed_methods(vec!["GET"]).finish())
             .data(Server {
                 settings: settings,
                 item_actor: ia,
             })
+            .route("/items", web::get().to(search_items))
             .route("/items/{item}", web::get().to(get_item))
+            .route("/symbols", web::get().to(get_symbols))
     })
     .bind("0.0.0.0:8080")?
     .run()
@@ -158,30 +176,84 @@ mod tests {
     use actix_web::{test, web, App, http::StatusCode};
 
     #[actix_rt::test]
-    async fn test_get_item() {
-        env_logger::init_from_env(
-            env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-        );
-
+    async fn test_search_items() {
         load_items("../items.csv");
 
+        //FIXME refactor to a function for reuse in test & main
         let srv = test::start(
             || App::new()
                 .data(
                     Server {
                         settings: Settings::from("../Settings").unwrap(),
                         item_actor: ItemActor::new().start(),
-                    }).route("/items/{item}", web::get().to(get_item))
+                    })
+                    .route("/items", web::get().to(search_items))
+        );
+        
+        match srv.get("/items?q=True+Iron+Ore").send().await {
+            Ok(mut icr) => {
+                assert_eq!(icr.status(), StatusCode::OK);
+                match icr.json().await {
+                    Ok(i) => {
+                        let items: Vec<Item> = i;
+                        assert_eq!(1, items.len());
+                        for item in items {
+                            assert!(item.en_us == "True Iron Ore");
+                        }
+                    },
+                    Err(e) => panic!("Failed during items listing: {}", e),
+                };
+            },
+            Err(e) => {
+                panic!("Items lookup failed: {}", e);
+            }
+        }
+    }
+
+    #[actix_rt::test]
+    async fn test_symbols_get_item_e2e() {
+        env_logger::init_from_env(
+            env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
         );
 
-        match srv.get("/items/109119").send().await {
-            Ok(cr) => {
-                assert_eq!(cr.status(), StatusCode::OK);
-            },
-            Err(_) => {
-                panic!("Request failed");
-            },
-        };
+        load_items("../items.csv");
+
+        //FIXME refactor to a function for reuse in test & main
+        let srv = test::start(
+            || App::new()
+                .data(
+                    Server {
+                        settings: Settings::from("../Settings").unwrap(),
+                        item_actor: ItemActor::new().start(),
+                    })
+                    .route("/items", web::get().to(search_items))
+                    .route("/items/{item}", web::get().to(get_item))
+                    .route("/symbols", web::get().to(get_symbols))
+        );
         
+        match srv.get("/symbols").send().await {
+            Ok(mut scr) => {
+                assert_eq!(scr.status(), StatusCode::OK);
+                let symbols: Vec<u64> = scr.json().await.unwrap();
+                assert!(symbols.len() > 0);
+
+                for sym in symbols {
+                    let uri = format!("/items/{}", sym);
+                    match srv.get(uri).send().await {
+                        Ok(mut icr) => {
+                            assert_eq!(icr.status(), StatusCode::OK);
+                            let series: Series = icr.json().await.unwrap();
+                            assert_eq!(series.id, sym);
+                        },
+                        Err(e) => {
+                            panic!("lookup failed: {}", e);
+                        },
+                    };
+                }
+            },
+            Err(e) => {
+                panic!("symbols lookup failed: {}", e);
+            }
+        }
     }
 }

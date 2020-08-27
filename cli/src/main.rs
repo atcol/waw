@@ -57,7 +57,7 @@ impl Handler<StoreAuction> for StorageActor {
                 StorageResult::Failed(format!("Redis connection error: {}", e))
             },
             Ok((c, mut con)) => {
-                info!("Storing: {:?}", msg.1);
+                trace!("Storing: {:?}", msg.1);
                 match store_auction(&mut con, msg.2, msg.1.auction_id, msg.1.item_id, msg.1.quantity, msg.1.unit_price)
                 {
                     Ok(_) => {
@@ -241,7 +241,7 @@ fn store_auction(
         .label("auction_id", &auc_id.to_string())
         .label("item", &item_id.to_string())
         .label("quantity", &quantity.to_string());
-    info!("Storing {}", key);
+    trace!("Storing {}", key);
     let _: u64 = con
         .ts_add_create(key, ts, &unit_price.to_string(), my_opts)
         .expect("Could not store item");

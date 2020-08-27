@@ -4,3 +4,4 @@ Cargo.lock
 *.json
 *.7z
 *.fb
+*/dist
