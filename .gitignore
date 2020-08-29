@@ -1,6 +1,7 @@
 **/*.rs.bk
 Cargo.lock
 /target
+/data
 *.json
 *.7z
 *.fb

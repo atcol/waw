@@ -1,7 +1,11 @@
+pub mod actors;
+pub mod db;
 pub mod realm;
+
 use chrono::{DateTime, Duration, Utc};
 use clap::Clap;
 use log::info;
+use redis::RedisError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize)]
@@ -169,6 +173,12 @@ impl From<config::ConfigError> for Error {
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         Error::IOError(format!("JSON serialisation error - {:?}", e))
+    }
+}
+
+impl From<lzma::LzmaError> for Error {
+    fn from(e: lzma::LzmaError) -> Self {
+        Error::IOError(format!("Parsing LZMA error - {:?}", e))
     }
 }
 

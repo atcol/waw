@@ -1,5 +1,6 @@
 use crate::{Error, Session};
 use async_trait::async_trait;
+use itertools::Itertools;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -40,6 +41,27 @@ pub struct ConnectedRealmLink {
 pub struct AuctionResponse {
     connected_realm: ConnectedRealmLink,
     pub auctions: Vec<Auction>,
+}
+
+impl AuctionResponse {
+    /// List the auctions by their lowest price
+    pub fn best_auctions(&self) -> Vec<crate::actors::AuctionRow> {
+        self.auctions
+            .iter()
+            .filter(|a| a.unit_price.is_some())
+            .sorted_by_key(|x| x.unit_price.unwrap())
+            .rev()
+            .group_by(|x| x.item.id)
+            .into_iter()
+            .map(|(iid, au)| (iid, au.take(1).next().unwrap()))
+            .map(|(iid, au)| crate::actors::AuctionRow {
+                item_id: iid,
+                auction_id: au.id,
+                quantity: au.quantity,
+                unit_price: au.unit_price.unwrap(),
+            })
+            .collect()
+    }
 }
 
 /// An individual auction
