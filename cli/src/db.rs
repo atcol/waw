@@ -1,4 +1,4 @@
-use crate::realm::{Auction, AuctionResponse, Realm};
+use crate::{AsKey, realm::{Auction, AuctionResponse, Realm}};
 use log::{error, info, trace};
 use redis::Connection;
 use redis::{Client, RedisError};
@@ -12,7 +12,7 @@ pub fn redis_connect(db_host: String) -> Result<(Client, Connection), RedisError
 
 pub async fn dump_redis_proto(auc: &Auction, ts: i64) -> Result<(), String> {
     let mut opt = String::new();
-    let key = format!("item:{}", &auc.item.id.to_string());
+    let key = &auc.item.to_key();
     let auc_id = &auc.item.id.to_string();
     let item_id = &auc.item.id.to_string();
     let quant = &auc.quantity.to_string();

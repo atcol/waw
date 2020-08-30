@@ -2,8 +2,6 @@ use actix::Handler;
 use actix::{Actor, Addr, Arbiter, Context, Message, System};
 use actix_web::{middleware, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use log::{error, info, trace};
-use redis::aio::Connection;
-use redis_ts::{AsyncTsCommands, TsCommands, TsOptions};
 use serde::{Deserialize, Serialize};
 use waw::realm::Item;
 use waw::Settings;
@@ -129,7 +127,7 @@ async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
             if let Ok(Some(item_md)) = item_lookup {
                 info!("Found item metadata: {:?}", item_md);
                 let values: Vec<ItemSnapshot> = match redis::cmd("TS.RANGE")
-                        .arg(format!("item:{}", id))
+                        .arg(item_md.to_key())
                         .arg("-".to_string())
                         .arg("+".to_string())
                         .query::<Vec<(i64, u64)>>(&mut con)

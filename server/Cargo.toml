@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.11"
-redis_ts = "0.1.0"
 redis = "0.16.0"
 actix-rt = "1.1.1"
 waw = { path = "../cli" }

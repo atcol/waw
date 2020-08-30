@@ -1,7 +1,6 @@
+use crate::AsKey;
 use actix::{Actor, Addr, Arbiter, Context, Handler, Message, System};
 use log::{error, info, trace};
-use redis::Connection;
-use redis_ts::{TsCommands, TsOptions};
 
 #[derive(Debug)]
 /// Mandatory data for auction storage
@@ -10,6 +9,16 @@ pub struct AuctionRow {
     pub auction_id: u64,
     pub quantity: u16,
     pub unit_price: u64,
+}
+
+impl AsKey for AuctionRow {
+    fn id(&self) -> String {
+        self.item_id.to_string()
+    }
+    
+    fn prefix(&self) -> Option<String> {
+         Some("item".to_string()) 
+    }
 }
 
 pub struct StorageActor;
@@ -50,7 +59,7 @@ impl Handler<StoreAuction> for StorageActor {
                 let c: &mut dyn redis::ConnectionLike = &mut con;
                 trace!("Storing: {:?}", msg.auction_row);
                 match redis::cmd("TS.ADD")
-                    .arg(format!("item:{}", &msg.auction_row.item_id))
+                    .arg(&msg.auction_row.to_key())
                     .arg(msg.timestamp.to_string())
                     .arg(msg.auction_row.unit_price.to_string())
                     .arg("RETENTION")

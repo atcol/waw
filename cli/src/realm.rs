@@ -1,3 +1,4 @@
+use crate::AsKey;
 use crate::{Error, Session};
 use async_trait::async_trait;
 use itertools::Itertools;
@@ -93,6 +94,16 @@ impl fmt::Display for AuctionTime {
 pub struct ItemIden {
     pub id: u64,
     context: Option<u16>,
+}
+
+impl AsKey for ItemIden {
+    fn id(&self) -> String {
+        self.id.to_string()
+    }
+
+    fn prefix(&self) -> Option<String> {
+         Some("item".to_string()) 
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
