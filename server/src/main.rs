@@ -35,11 +35,15 @@ pub struct ItemSnapshot {
 impl redis::FromRedisValue for ItemSnapshots {
     fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
         match *v {
-            redis::Value::Bulk(ref values) => {
-                Ok(ItemSnapshots {
-                    snapshots: redis::FromRedisValue::from_redis_values(values)?.into_iter().map(|v: (i64, u64)| ItemSnapshot{ ts: v.0, value: v.1}).collect()
-                 })
-            },
+            redis::Value::Bulk(ref values) => Ok(ItemSnapshots {
+                snapshots: redis::FromRedisValue::from_redis_values(values)?
+                    .into_iter()
+                    .map(|v: (i64, u64)| ItemSnapshot {
+                        ts: v.0,
+                        value: v.1,
+                    })
+                    .collect(),
+            }),
             _ => Err(redis::RedisError::from(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "no_range_data",
@@ -118,19 +122,17 @@ async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
     if let Some(id) = item {
         let client = redis::Client::open(format!("redis://{}/", server.settings.db_host))
             .expect("Redis connection failed");
-        let mut con = client
-            .get_connection()
-            .expect("Redis client unavailable");
+        let mut con = client.get_connection().expect("Redis client unavailable");
 
         if let Ok(item_id) = id.parse() {
             let item_lookup = server.item_actor.send(GetItem(item_id)).await;
             if let Ok(Some(item_md)) = item_lookup {
                 info!("Found item metadata: {:?}", item_md);
                 let values: Vec<ItemSnapshot> = match redis::cmd("TS.RANGE")
-                        .arg(item_md.to_key())
-                        .arg("-".to_string())
-                        .arg("+".to_string())
-                        .query::<Vec<(i64, u64)>>(&mut con)
+                    .arg(item_md.to_key())
+                    .arg("-".to_string())
+                    .arg("+".to_string())
+                    .query::<Vec<(i64, u64)>>(&mut con)
                 {
                     Ok(x) => x
                         .iter()

@@ -102,7 +102,7 @@ impl AsKey for ItemIden {
     }
 
     fn prefix(&self) -> Option<String> {
-         Some("item".to_string()) 
+        Some("item".to_string())
     }
 }
 

@@ -9,13 +9,12 @@ use serde::{Deserialize, Serialize};
 
 /// Represent this instance as a uniquely identifiable item in some store, i.e. convert to a key
 pub trait AsKey {
-    
-    fn to_key(&self) -> std::string::String { 
+    fn to_key(&self) -> std::string::String {
         format!("{}:{}", self.prefix().unwrap_or("".to_string()), self.id())
     }
 
     /// The unique identifier value
-    fn id(&self) -> String; 
+    fn id(&self) -> String;
 
     /// The beginning of this identifier
     fn prefix(&self) -> Option<String>;
@@ -27,7 +26,7 @@ impl AsKey for crate::realm::Item {
     }
 
     fn prefix(&self) -> Option<String> {
-         Some("item".to_string()) 
+        Some("item".to_string())
     }
 }
 

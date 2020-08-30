@@ -1,8 +1,10 @@
-use crate::{AsKey, realm::{Auction, AuctionResponse, Realm}};
+use crate::{
+    realm::{Auction, AuctionResponse, Realm},
+    AsKey,
+};
 use log::{error, info, trace};
 use redis::Connection;
 use redis::{Client, RedisError};
-use redis_ts::{TsOptions};
 
 pub fn redis_connect(db_host: String) -> Result<(Client, Connection), RedisError> {
     let client: Client = Client::open(format!("redis://{}/", db_host)).unwrap();

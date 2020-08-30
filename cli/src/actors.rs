@@ -15,9 +15,9 @@ impl AsKey for AuctionRow {
     fn id(&self) -> String {
         self.item_id.to_string()
     }
-    
+
     fn prefix(&self) -> Option<String> {
-         Some("item".to_string()) 
+        Some("item".to_string())
     }
 }
 
