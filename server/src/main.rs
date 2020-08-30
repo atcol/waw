@@ -24,9 +24,30 @@ pub struct Series {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct ItemSnapshots {
+    snapshots: Vec<ItemSnapshot>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ItemSnapshot {
     pub ts: i64,
     pub value: u64,
+}
+
+impl redis::FromRedisValue for ItemSnapshots {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        match *v {
+            redis::Value::Bulk(ref values) => {
+                Ok(ItemSnapshots {
+                    snapshots: redis::FromRedisValue::from_redis_values(values)?.into_iter().map(|v: (i64, u64)| ItemSnapshot{ ts: v.0, value: v.1}).collect()
+                 })
+            },
+            _ => Err(redis::RedisError::from(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "no_range_data",
+            ))),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -100,26 +121,20 @@ async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
         let client = redis::Client::open(format!("redis://{}/", server.settings.db_host))
             .expect("Redis connection failed");
         let mut con = client
-            .get_async_connection()
-            .await
+            .get_connection()
             .expect("Redis client unavailable");
 
         if let Ok(item_id) = id.parse() {
             let item_lookup = server.item_actor.send(GetItem(item_id)).await;
             if let Ok(Some(item_md)) = item_lookup {
                 info!("Found item metadata: {:?}", item_md);
-                let values: Vec<ItemSnapshot> = match con
-                    .ts_range(
-                        format!("item:{}", id),
-                        "-".to_string(),
-                        "+".to_string(),
-                        None::<usize>,
-                        None,
-                    )
-                    .await
+                let values: Vec<ItemSnapshot> = match redis::cmd("TS.RANGE")
+                        .arg(format!("item:{}", id))
+                        .arg("-".to_string())
+                        .arg("+".to_string())
+                        .query::<Vec<(i64, u64)>>(&mut con)
                 {
                     Ok(x) => x
-                        .values
                         .iter()
                         .map(|(ts, v)| ItemSnapshot { ts: *ts, value: *v })
                         .collect(),

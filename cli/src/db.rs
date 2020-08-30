@@ -2,34 +2,12 @@ use crate::realm::{Auction, AuctionResponse, Realm};
 use log::{error, info, trace};
 use redis::Connection;
 use redis::{Client, RedisError};
-use redis_ts::{TsCommands, TsOptions};
+use redis_ts::{TsOptions};
 
 pub fn redis_connect(db_host: String) -> Result<(Client, Connection), RedisError> {
     let client: Client = Client::open(format!("redis://{}/", db_host)).unwrap();
     let con = client.get_connection()?;
-    let mut c = client.get_connection()?;
     Ok((client, con))
-}
-
-pub fn store_auction(
-    con: Connection,
-    ts: i64,
-    auc_id: u64,
-    item_id: u64,
-    quantity: u16,
-    unit_price: u64,
-) -> Result<(), redis::RedisError> {
-    let key = format!("item:{}", &item_id.to_string(),);
-    let my_opts = TsOptions::default()
-        .retention_time(600000)
-        .label("auction_id", &auc_id.to_string())
-        .label("item", &item_id.to_string())
-        .label("quantity", &quantity.to_string());
-    trace!("Storing {}", key);
-    // let _: u64 = con
-    //     .ts_add_create(key, ts, &unit_price.to_string(), my_opts)
-    //     .expect("Could not store item");
-    Ok(())
 }
 
 pub async fn dump_redis_proto(auc: &Auction, ts: i64) -> Result<(), String> {
