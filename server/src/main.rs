@@ -44,7 +44,7 @@ impl redis::FromRedisValue for ItemSnapshots {
                         value: v.1,
                     })
                     .collect(),
-            }),
+           }),
             _ => Err(redis::RedisError::from(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "no_range_data",
@@ -129,23 +129,33 @@ async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
             let item_lookup = server.item_actor.send(GetItem(item_id)).await;
             if let Ok(Some(item_md)) = item_lookup {
                 info!("Found item metadata: {:?}", item_md);
-                let values: Vec<ItemSnapshot> = match redis::cmd("TS.RANGE")
-                    .arg(item_md.to_key())
-                    .arg("-".to_string())
-                    .arg("+".to_string())
-                    .query::<Vec<(i64, u64)>>(&mut con)
-                {
-                    Ok(x) => x
-                        .iter()
-                        .map(|(ts, v)| ItemSnapshot { ts: *ts, value: *v })
-                        .collect(),
-                    Err(_) => Vec::new(),
-                };
-                HttpResponse::Ok().json(Series {
-                    id: item_id,
-                    name: item_md.en_us.clone(),
-                    prices: values,
-                })
+                // let values: Vec<ItemSnapshot> = 
+                match waw::db::get_range(&mut con, &item_md) {
+                    Ok(x) => {
+                        match x {
+                            redis::Value::Bulk(v) => {
+                                HttpResponse::Ok().json(Series {
+                                    id: item_id,
+                                    name: item_md.en_us.clone(),
+                                    prices: v
+                                        .iter()
+                                        .flat_map(|ref l| {
+                                            match l {
+                                                redis::Value::Bulk(vl) => Some((redis::from_redis_value(&vl[0]).unwrap(), redis::from_redis_value(&vl[1]).unwrap())),
+                                                _ => None
+                                            }
+                                        })
+                                        .map(|(ts, v)| ItemSnapshot { ts, value: v })
+                                        .collect()
+                                })
+                            },
+                            _ => HttpResponse::InternalServerError().body(format!("Unknown redis response for {}", item_id))
+                        }
+                    }, 
+                    Err(e) => {
+                        HttpResponse::InternalServerError().body(format!("Failure during series lookup: {}", e))
+                    },
+                }
             } else {
                 error!("No item {} found via actor lookup", item_id);
                 HttpResponse::NotFound().body("No such item")
@@ -189,6 +199,7 @@ async fn main() -> std::io::Result<()> {
                 actix_cors::Cors::new()
                     .send_wildcard()
                     .allowed_methods(vec!["GET"])
+                    .allowed_origin("*")
                     .finish(),
             )
             .data(Server {

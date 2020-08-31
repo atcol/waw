@@ -40,3 +40,18 @@ pub async fn dump_redis_proto(auc: &Auction, ts: i64) -> Result<(), String> {
     println!("{}", opt);
     Ok(())
 }
+
+/// `TS.RANGE` for the given key
+pub fn get_range<T>(
+    con: &mut Connection,
+    item_md: &T,
+) -> std::result::Result<redis::Value, redis::RedisError>
+where
+    T: AsKey
+{
+    redis::cmd("TS.RANGE")
+        .arg(item_md.to_key())
+        .arg("-".to_string())
+        .arg("+".to_string())
+        .query::<redis::Value>(con)
+}
