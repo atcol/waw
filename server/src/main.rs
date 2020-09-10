@@ -1,13 +1,10 @@
-use waw::AsKey;
 use actix::Handler;
 use actix::{Actor, Addr, Arbiter, Context, Message, System};
 use actix_web::{middleware, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
-use log::{error, info, trace};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use waw::realm::Item;
 use waw::Settings;
-
-static mut ITEMS: Vec<Item> = Vec::new();
 
 pub struct Server {
     settings: Settings,
@@ -53,15 +50,14 @@ impl redis::FromRedisValue for ItemSnapshots {
     }
 }
 
-#[derive(Debug)]
 struct ItemActor {
-    items: Box<Vec<Item>>,
+    con: redis::Connection,
 }
 
 impl ItemActor {
-    pub fn new() -> Self {
+    pub fn new(con: redis::Connection) -> Self {
         Self {
-            items: Box::new(Vec::new()),
+           con: con, 
         }
     }
 }
@@ -82,56 +78,51 @@ struct ItemSearch {
 impl Handler<GetItem> for ItemActor {
     type Result = Option<Item>;
 
-    fn handle(&mut self, msg: GetItem, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: GetItem, _: &mut Self::Context) -> Self::Result {
         info!("Finding item {:?}", msg);
-        unsafe {
-            info!("There are {} items", ITEMS.len());
-        }
-        unsafe {
-            ITEMS
-                .iter()
-                .filter(|x| msg.0 == x.id)
-                .map(|x| x.en_us.clone())
-                .next()
-        }
-        .map(|l| Item {
-            id: msg.0,
-            en_us: l,
-        })
+        waw::db::get_item_metadata(&mut self.con, msg.0).expect("Actor failed item metadata lookup")
     }
 }
 
-async fn get_symbols(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
+async fn get_watchlist(_: web::Data<Server>, _: HttpRequest) -> HttpResponse {
     HttpResponse::Ok().json(vec![109119, 109076, 111557])
 }
 
 async fn search_items(server: web::Data<Server>, search: web::Query<ItemSearch>) -> HttpResponse {
-    unsafe {
-        HttpResponse::Ok().json::<Vec<&Item>>(
-            ITEMS
-                .iter()
-                .filter(|x| x.en_us == search.q)
-                .map(|x| x.clone())
-                .collect(),
-        )
+    let mut con = waw::db::redis_connect(server.settings.db_host.clone()).unwrap().1;
+    match waw::db::search_ids_for_item(&mut con, search.q.clone()) {
+        Ok(i) => {
+            HttpResponse::Ok().json::<Vec<Item>>(
+                i.into_iter()
+                .map(|id_list| {
+                    id_list.into_iter()
+                        .map(|id| {
+                            waw::db::get_item_metadata(&mut con, id.parse().unwrap()).unwrap().unwrap()
+                        })
+                        .collect::<Vec<Item>>()
+                }).flatten().collect()
+            )
+        }
+        Err(e) => {
+            HttpResponse::NotFound().body(format!("{}", e))
+        }
     }
 }
 
-async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
+async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
     let item = req.match_info().get("item");
     info!("Item lookup {}", item.unwrap_or("No item"));
     if let Some(id) = item {
-        let client = redis::Client::open(format!("redis://{}/", server.settings.db_host))
-            .expect("Redis connection failed");
-        let mut con = client.get_connection().expect("Redis client unavailable");
+        let mut con = waw::db::redis_connect(server.settings.db_host.clone()).unwrap().1;
 
         if let Ok(item_id) = id.parse() {
             let item_lookup = server.item_actor.send(GetItem(item_id)).await;
             if let Ok(Some(item_md)) = item_lookup {
                 info!("Found item metadata: {:?}", item_md);
-                // let values: Vec<ItemSnapshot> = 
+
                 match waw::db::get_range(&mut con, &item_md) {
                     Ok(x) => {
+                        info!("Handling range for {}: {:?}", item_id, x);
                         match x {
                             redis::Value::Bulk(v) => {
                                 HttpResponse::Ok().json(Series {
@@ -149,10 +140,14 @@ async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
                                         .collect()
                                 })
                             },
-                            _ => HttpResponse::InternalServerError().body(format!("Unknown redis response for {}", item_id))
+                            v =>{
+                                error!("Unexpected redis response for series lookup for {}: {:?}", item_id, v);
+                                HttpResponse::InternalServerError().body(format!("Unknown redis response for {}", item_id))
+                            } 
                         }
                     }, 
                     Err(e) => {
+                        error!("Series lookup for {} failed: {}", item_id, e);
                         HttpResponse::InternalServerError().body(format!("Failure during series lookup: {}", e))
                     },
                 }
@@ -168,30 +163,17 @@ async fn get_item(server: web::Data<Server>, req: HttpRequest) -> HttpResponse {
     }
 }
 
-fn load_items(path: &'static str) {
-    match csv::Reader::from_path(std::path::Path::new(path)) {
-        Ok(mut reader) => {
-            reader.deserialize::<Item>().for_each(|x| match x {
-                Ok(i) => unsafe { ITEMS.push(i) },
-                Err(e) => panic!("Failed to parse item CSV: {}", e),
-            });
-        }
-        Err(e) => {
-            panic!("Failed to load item metadata: {}", e);
-        }
-    };
-}
-
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
-    load_items("items.csv");
 
     HttpServer::new(move || {
         let settings = Settings::new().unwrap();
-        let ia = ItemActor::new().start();
+        let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
+        waw::db::store_item_metadata(&mut ct.1, "items.csv");
+        let ia = ItemActor::new(ct.1).start();
 
         App::new()
             .wrap(middleware::Compress::default())
@@ -203,12 +185,12 @@ async fn main() -> std::io::Result<()> {
                     .finish(),
             )
             .data(Server {
-                settings: settings,
+                settings: Settings::new().unwrap(),
                 item_actor: ia,
             })
             .route("/items", web::get().to(search_items))
-            .route("/items/{item}", web::get().to(get_item))
-            .route("/symbols", web::get().to(get_symbols))
+            .route("/series/{item}", web::get().to(get_series))
+            .route("/watchlist", web::get().to(get_watchlist))
     })
     .bind("0.0.0.0:8080")?
     .run()
@@ -222,14 +204,20 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_search_items() {
-        load_items("../items.csv");
+        env_logger::init_from_env(
+            env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
+        );
 
         //FIXME refactor to a function for reuse in test & main
-        let srv = test::start(|| {
+        let srv = test::start(move || {
+            let settings = Settings::from("../Settings").unwrap();
+            let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
+            let ia = ItemActor::new(ct.1).start();
+
             App::new()
                 .data(Server {
                     settings: Settings::from("../Settings").unwrap(),
-                    item_actor: ItemActor::new().start(),
+                    item_actor: ia,
                 })
                 .route("/items", web::get().to(search_items))
         });
@@ -256,32 +244,31 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_symbols_get_item_e2e() {
-        env_logger::init_from_env(
-            env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-        );
-
-        load_items("../items.csv");
 
         //FIXME refactor to a function for reuse in test & main
         let srv = test::start(|| {
+            let settings = Settings::from("../Settings").unwrap();
+            let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
+            let ia = ItemActor::new(ct.1).start();
             App::new()
                 .data(Server {
                     settings: Settings::from("../Settings").unwrap(),
-                    item_actor: ItemActor::new().start(),
+                    item_actor: ia,
                 })
                 .route("/items", web::get().to(search_items))
-                .route("/items/{item}", web::get().to(get_item))
-                .route("/symbols", web::get().to(get_symbols))
+                .route("/series/{item}", web::get().to(get_series))
+                .route("/watchlist", web::get().to(get_watchlist))
         });
 
-        match srv.get("/symbols").send().await {
+        match srv.get("/watchlist").send().await {
             Ok(mut scr) => {
                 assert_eq!(scr.status(), StatusCode::OK);
                 let symbols: Vec<u64> = scr.json().await.unwrap();
                 assert!(symbols.len() > 0);
 
                 for sym in symbols {
-                    let uri = format!("/items/{}", sym);
+                    let uri = format!("/series/{}", sym);
+                    info!("Series lookup: {}", uri);
                     match srv.get(uri).send().await {
                         Ok(mut icr) => {
                             assert_eq!(icr.status(), StatusCode::OK);

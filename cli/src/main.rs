@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
-    let sys = System::new("Waw");
+    let _ = System::new("Waw");
     let sa_addr = waw::actors::StorageActor::default().start();
     let settings = Settings::new()?;
     let opts = Opts::parse();

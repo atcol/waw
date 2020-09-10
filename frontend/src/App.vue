@@ -110,11 +110,11 @@ export default Vue.extend({
       this.chartDialog = i;
       this.chartDialog.open = true;
     });
-    fetch("http://localhost:8080/symbols")
+    fetch("http://winston:8080/watchlist")
       .then(data => data.json())
       .then((data: number[]) => {
         data.forEach(id => {
-          d3.json("http://localhost:8080/items/" + id).then(function(data: {
+          d3.json("http://winston:8080/series/" + id).then(function(data: {
             prices: { value: number }[];
           }) {
             symbols.push({ values: data.prices.map(p => p.value), ...data });

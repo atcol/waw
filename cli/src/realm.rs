@@ -111,3 +111,32 @@ pub struct Item {
     pub id: u64,
     pub en_us: String,
 }
+
+impl redis::ToRedisArgs for Item {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + redis::RedisWrite,
+    {
+        out.write_arg(format!("{} en_us {}", self.to_key(), self.en_us).as_bytes())
+    }
+}
+
+impl redis::FromRedisValue for Item {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        match v {
+            // redis::Value::Data(d) => {
+            //     Ok(Item {
+            //         id: redis::from_redis_value(&d[0])?,
+            //         en_us: redis::from_redis_value(d[1])?
+            //     })
+            // },
+            
+            redis::Value::Data(d) => {
+               panic!(format!("Data Item: {:?}", d));
+            },
+            e => {
+               panic!(format!("Failed to map Item: {:?}", e));
+            },
+        }
+    }
+}

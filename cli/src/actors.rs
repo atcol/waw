@@ -17,7 +17,7 @@ impl AsKey for AuctionRow {
     }
 
     fn prefix(&self) -> Option<String> {
-        Some("item".to_string())
+        Some("items".to_string())
     }
 }
 
@@ -58,20 +58,14 @@ impl Handler<StoreAuction> for StorageActor {
             Ok((c, mut con)) => {
                 let c: &mut dyn redis::ConnectionLike = &mut con;
                 trace!("Storing: {:?}", msg.auction_row);
-                match redis::cmd("TS.ADD")
-                    .arg(&msg.auction_row.to_key())
-                    .arg(msg.timestamp.to_string())
-                    .arg(msg.auction_row.unit_price.to_string())
-                    .arg("RETENTION")
-                    .arg("0")
-                    .arg("LABELS")
-                    .arg(msg.auction_row.auction_id.to_string())
-                    .arg("item")
-                    .arg(msg.auction_row.item_id.to_string())
-                    .arg("quantity")
-                    .arg(msg.auction_row.quantity.to_string())
-                    .query::<u64>(c)
-                {
+                match crate::db::store_auction(
+                    &mut con,
+                    msg.auction_row.to_key(),
+                    msg.timestamp,
+                    msg.auction_row.unit_price,
+                    msg.auction_row.auction_id.to_string(),
+                    msg.auction_row.item_id,
+                    msg.auction_row.quantity) {
                     Ok(_) => {
                         trace!("Stored {}", msg.auction_row.item_id);
                         StorageResult::Success
