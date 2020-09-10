@@ -179,9 +179,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Compress::default())
             .wrap(
                 actix_cors::Cors::new()
-                    .send_wildcard()
-                    .allowed_methods(vec!["GET"])
-                    .allowed_origin("*")
+                    .supports_credentials()
                     .finish(),
             )
             .data(Server {
