@@ -71,30 +71,10 @@ impl Handler<StoreAuction> for StorageActor {
                         StorageResult::Success
                     }
                     Err(e) => {
-                        error!("Failed to store {}", e);
+                        error!("Failed to store item {:?}: {}", msg.auction_row, e);
                         StorageResult::Failed(format!("Redis error: {}", e))
                     }
                 }
-
-                // &key,
-                // tss,
-                // val,
-                // "labels",
-                // "auction_id",
-                // auc_id,
-                // "item",
-                // item_id,
-                // "quantity",
-                // quant,
-                // match crate::db::store_auction(
-                //     c,
-                //     msg.2,
-                //     msg.1.auction_id,
-                //     msg.1.item_id,
-                //     msg.1.quantity,
-                //     msg.1.unit_price,
-                // ) {
-                // }
             }
         }
     }
