@@ -188,8 +188,7 @@ pub fn store_auction(
         .arg(item_id.to_string())
         .arg("quantity")
         .arg(quantity.to_string())
-        // .zadd(format!("ptr:item:{}", en_us.clone()),  item_id.to_string(), 1)
-        .query::<u64>(con)?;
+        .execute(con);
 
     Ok(())
 }
