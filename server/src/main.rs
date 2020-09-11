@@ -142,7 +142,8 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
                                         .unwrap_or((0, 0));
                                     let max = prices.iter()
                                         .max_by(|x,y| x.value.cmp(&y.value))
-                                        .map(|i| (i.ts, i.value));
+                                        .map(|i| (i.ts, i.value))
+                                        .unwrap_or((0, 0));
                                 HttpResponse::Ok().json(Series {
                                     id: item_id,
                                     name: item_md.en_us.clone(),
