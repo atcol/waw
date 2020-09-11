@@ -17,6 +17,8 @@ pub struct Series {
     id: u64,
     name: String,
     prices: Vec<ItemSnapshot>,
+    min: (i64, u64),
+    max: (i64, u64),
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -122,13 +124,10 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
 
                 match waw::db::get_range(&mut con, &item_md) {
                     Ok(x) => {
-                        info!("Handling range for {}: {:?}", item_id, x);
+                        info!("Handling range for {}", item_id);
                         match x {
                             redis::Value::Bulk(v) => {
-                                HttpResponse::Ok().json(Series {
-                                    id: item_id,
-                                    name: item_md.en_us.clone(),
-                                    prices: v
+                                    let prices: Vec<ItemSnapshot> = v
                                         .iter()
                                         .flat_map(|ref l| {
                                             match l {
@@ -137,7 +136,19 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
                                             }
                                         })
                                         .map(|(ts, v)| ItemSnapshot { ts, value: v })
-                                        .collect()
+                                        .collect();
+                                    let min = prices.iter()
+                                        .min_by(|x,y| x.value.cmp(&y.value)).map(|i| (i.ts, i.value))
+                                        .unwrap_or((0, 0));
+                                    let max = prices.iter()
+                                        .max_by(|x,y| x.value.cmp(&y.value))
+                                        .map(|i| (i.ts, i.value));
+                                HttpResponse::Ok().json(Series {
+                                    id: item_id,
+                                    name: item_md.en_us.clone(),
+                                    min: min,
+                                    max: max,
+                                    prices: prices,
                                 })
                             },
                             v =>{
