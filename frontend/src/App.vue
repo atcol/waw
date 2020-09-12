@@ -14,7 +14,7 @@
         hide-details
       ></v-autocomplete>
     </v-app-bar>
-    <v-navigation-drawer v-model="drawer" dark permanent app>
+    <v-navigation-drawer dark permanent app>
       <v-list dense>
         <v-list-item>
           <v-list-item-content>
@@ -31,7 +31,7 @@
             v-for="(symbol, i) in chartData"
             :key="String(i)"
             link
-            @click="$emit('show-chart-dialog', symbol);"
+            @click="$emit('show-chart-dialog', symbol)"
           >
             <v-list-item-title v-text="symbol.name"></v-list-item-title>
           </v-list-item>
@@ -46,33 +46,16 @@
         </v-list-item>
       </v-list>
     </v-navigation-drawer>
-
     <v-main>
-      <v-container class="fill-height" fluid>
-        <v-row align="center" justify="center">
+      <v-container fill-height>
+        <v-row align="top" justify="center">
           <v-col class="text-center">
-            <div v-for="data in chartData" v-bind:key="data">
-              <item-card :name="data.name" :data="data.prices" :id="data.id"></item-card>
-            </div>
+            <watchlist-table v-if="chartData !== undefined" v-bind:items="chartData" />
           </v-col>
         </v-row>
       </v-container>
     </v-main>
 
-    <v-row justify="center">
-      <v-dialog v-on:show-chart-dialog="chartDialog.open" persistent max-width="1280">
-        <v-card>
-          <v-card-title class="headline" v-text="chartDialog.name"></v-card-title>
-          <v-card-text>
-            <chart :name="chartDialog.name" :data="chartDialog.prices" :id="chartDialog.id" />
-          </v-card-text>
-          <v-card-actions>
-            <v-spacer></v-spacer>
-            <v-btn color="green darken-1" text @click="chartDialog.open = false">Close</v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-dialog>
-    </v-row>
     <v-footer light>
       <span class="black--text">&copy; {{ new Date().getFullYear() }}</span>
     </v-footer>
@@ -80,47 +63,46 @@
 </template>
 
 <script lang="ts">
+/* eslint-disable vue/no-unused-components */
 import Vue from "vue";
-import Chart from "./components/Chart.vue";
 import ItemCard from "./components/ItemCard.vue";
+import WatchlistTable from "./components/WatchlistTable.vue";
 import * as d3 from "d3";
 
 const symbols = Vue.observable([]);
+fetch("http://winston:8080/watchlist")
+  .then(data => data.json())
+  .then((data: number[]) => {
+    data.forEach(id => {
+      d3.json("http://winston:8080/series/" + id).then(function(data: {
+        prices: { value: number }[];
+      }) {
+        symbols.push({ values: data.prices.map(p => p.value), ...data });
+      });
+    });
+  });
 
 export default Vue.extend({
   name: "App",
 
   components: {
-    chart: Chart,
-    "item-card": ItemCard
+    "item-card": ItemCard,
+    "watchlist-table": WatchlistTable
   },
 
-  watch: {},
+  watch: {
+    search(newVal, oldVal) {
+      return newVal + oldVal;
+    }
+  },
 
   data: () => {
     return {
       chartData: symbols,
       searchResults: [],
-      chartDialog: {}
+      select: {},
+      search: null,
     };
   },
-
-  mounted() {
-    this.$on("show-chart-dialog", function(i) {
-      this.chartDialog = i;
-      this.chartDialog.open = true;
-    });
-    fetch("http://winston:8080/watchlist")
-      .then(data => data.json())
-      .then((data: number[]) => {
-        data.forEach(id => {
-          d3.json("http://winston:8080/series/" + id).then(function(data: {
-            prices: { value: number }[];
-          }) {
-            symbols.push({ values: data.prices.map(p => p.value), ...data });
-          });
-        });
-      });
-  }
 });
 </script>

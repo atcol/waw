@@ -1,6 +1,6 @@
 use actix::Handler;
-use actix::{Actor, Addr, Arbiter, Context, Message, System};
-use actix_web::{middleware, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix::{Actor, Addr, Context, Message};
+use actix_web::{middleware, web, App, HttpRequest, HttpResponse, HttpServer};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use waw::realm::Item;
@@ -43,7 +43,7 @@ impl redis::FromRedisValue for ItemSnapshots {
                         value: v.1,
                     })
                     .collect(),
-           }),
+            }),
             _ => Err(redis::RedisError::from(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "no_range_data",
@@ -58,9 +58,7 @@ struct ItemActor {
 
 impl ItemActor {
     pub fn new(con: redis::Connection) -> Self {
-        Self {
-           con: con, 
-        }
+        Self { con: con }
     }
 }
 
@@ -74,7 +72,7 @@ struct GetItem(u64);
 
 #[derive(Deserialize)]
 struct ItemSearch {
-    q: String,
+    p: String,
 }
 
 impl Handler<GetItem> for ItemActor {
@@ -86,28 +84,38 @@ impl Handler<GetItem> for ItemActor {
     }
 }
 
-async fn get_watchlist(_: web::Data<Server>, _: HttpRequest) -> HttpResponse {
-    HttpResponse::Ok().json(vec![109119, 109076, 111557])
+async fn get_watchlist(server: web::Data<Server>, _: HttpRequest) -> HttpResponse {
+    let mut con = waw::db::redis_connect(server.settings.db_host.clone())
+        .unwrap()
+        .1;
+    let watchlist: Vec<u64> = redis::cmd("SMEMBERS")
+        .arg("watchlist")
+        .query(&mut con)
+        .unwrap();
+    HttpResponse::Ok().json(watchlist)
 }
 
 async fn search_items(server: web::Data<Server>, search: web::Query<ItemSearch>) -> HttpResponse {
-    let mut con = waw::db::redis_connect(server.settings.db_host.clone()).unwrap().1;
-    match waw::db::search_ids_for_item(&mut con, search.q.clone()) {
-        Ok(i) => {
-            HttpResponse::Ok().json::<Vec<Item>>(
-                i.into_iter()
+    let mut con = waw::db::redis_connect(server.settings.db_host.clone())
+        .unwrap()
+        .1;
+    match waw::db::search_ids_for_item(&mut con, search.p.clone()) {
+        Ok(i) => HttpResponse::Ok().json::<Vec<Item>>(
+            i.into_iter()
                 .map(|id_list| {
-                    id_list.into_iter()
+                    id_list
+                        .into_iter()
                         .map(|id| {
-                            waw::db::get_item_metadata(&mut con, id.parse().unwrap()).unwrap().unwrap()
+                            waw::db::get_item_metadata(&mut con, id.parse().unwrap())
+                                .unwrap()
+                                .unwrap()
                         })
                         .collect::<Vec<Item>>()
-                }).flatten().collect()
-            )
-        }
-        Err(e) => {
-            HttpResponse::NotFound().body(format!("{}", e))
-        }
+                })
+                .flatten()
+                .collect(),
+        ),
+        Err(e) => HttpResponse::NotFound().body(format!("{}", e)),
     }
 }
 
@@ -115,7 +123,9 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
     let item = req.match_info().get("item");
     info!("Item lookup {}", item.unwrap_or("No item"));
     if let Some(id) = item {
-        let mut con = waw::db::redis_connect(server.settings.db_host.clone()).unwrap().1;
+        let mut con = waw::db::redis_connect(server.settings.db_host.clone())
+            .unwrap()
+            .1;
 
         if let Ok(item_id) = id.parse() {
             let item_lookup = server.item_actor.send(GetItem(item_id)).await;
@@ -127,23 +137,27 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
                         info!("Handling range for {}", item_id);
                         match x {
                             redis::Value::Bulk(v) => {
-                                    let prices: Vec<ItemSnapshot> = v
-                                        .iter()
-                                        .flat_map(|ref l| {
-                                            match l {
-                                                redis::Value::Bulk(vl) => Some((redis::from_redis_value(&vl[0]).unwrap(), redis::from_redis_value(&vl[1]).unwrap())),
-                                                _ => None
-                                            }
-                                        })
-                                        .map(|(ts, v)| ItemSnapshot { ts, value: v })
-                                        .collect();
-                                    let min = prices.iter()
-                                        .min_by(|x,y| x.value.cmp(&y.value)).map(|i| (i.ts, i.value))
-                                        .unwrap_or((0, 0));
-                                    let max = prices.iter()
-                                        .max_by(|x,y| x.value.cmp(&y.value))
-                                        .map(|i| (i.ts, i.value))
-                                        .unwrap_or((0, 0));
+                                let prices: Vec<ItemSnapshot> = v
+                                    .iter()
+                                    .flat_map(|ref l| match l {
+                                        redis::Value::Bulk(vl) => Some((
+                                            redis::from_redis_value(&vl[0]).unwrap(),
+                                            redis::from_redis_value(&vl[1]).unwrap(),
+                                        )),
+                                        _ => None,
+                                    })
+                                    .map(|(ts, v)| ItemSnapshot { ts, value: v })
+                                    .collect();
+                                let min = prices
+                                    .iter()
+                                    .min_by(|x, y| x.value.cmp(&y.value))
+                                    .map(|i| (i.ts, i.value))
+                                    .unwrap_or((0, 0));
+                                let max = prices
+                                    .iter()
+                                    .max_by(|x, y| x.value.cmp(&y.value))
+                                    .map(|i| (i.ts, i.value))
+                                    .unwrap_or((0, 0));
                                 HttpResponse::Ok().json(Series {
                                     id: item_id,
                                     name: item_md.en_us.clone(),
@@ -151,17 +165,22 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
                                     max: max,
                                     prices: prices,
                                 })
-                            },
-                            v =>{
-                                error!("Unexpected redis response for series lookup for {}: {:?}", item_id, v);
-                                HttpResponse::InternalServerError().body(format!("Unknown redis response for {}", item_id))
-                            } 
+                            }
+                            v => {
+                                error!(
+                                    "Unexpected redis response for series lookup for {}: {:?}",
+                                    item_id, v
+                                );
+                                HttpResponse::InternalServerError()
+                                    .body(format!("Unknown redis response for {}", item_id))
+                            }
                         }
-                    }, 
+                    }
                     Err(e) => {
                         error!("Series lookup for {} failed: {}", item_id, e);
-                        HttpResponse::InternalServerError().body(format!("Failure during series lookup: {}", e))
-                    },
+                        HttpResponse::InternalServerError()
+                            .body(format!("Failure during series lookup: {}", e))
+                    }
                 }
             } else {
                 error!("No item {} found via actor lookup", item_id);
@@ -175,7 +194,7 @@ async fn get_series(server: web::Data<Server>, req: HttpRequest) -> HttpResponse
     }
 }
 
-#[actix_rt::main]
+#[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
@@ -184,16 +203,14 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let settings = Settings::new().unwrap();
         let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
-        waw::db::store_item_metadata(&mut ct.1, "items.csv");
+        waw::db::store_watchlist(&mut ct.1, "../ref-data/init.json")
+            .expect("Couldn't store watchlist");
+        waw::db::store_item_metadata(&mut ct.1, "../ref-data/items.csv").expect("Couldn't store item metadata");
         let ia = ItemActor::new(ct.1).start();
 
         App::new()
             .wrap(middleware::Compress::default())
-            .wrap(
-                actix_cors::Cors::new()
-                    .supports_credentials()
-                    .finish(),
-            )
+            .wrap(actix_cors::Cors::new().supports_credentials().finish())
             .data(Server {
                 settings: Settings::new().unwrap(),
                 item_actor: ia,
@@ -217,10 +234,17 @@ mod tests {
         env_logger::init_from_env(
             env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
         );
+        let settings = Settings::from("../Settings").unwrap();
+
+        // This only needs to be done once, it's slow
+        let (_, mut con) = waw::db::redis_connect(settings.db_host.clone()).unwrap();
+        info!("Stored: {} watchlist", waw::db::store_watchlist(&mut con, "../ref-data/init.json")
+            .expect("Couldn't store watchlist"));
+        waw::db::store_item_metadata(&mut con, "../ref-data/items.csv")
+            .expect("Couldn't store item metadata");
 
         //FIXME refactor to a function for reuse in test & main
         let srv = test::start(move || {
-            let settings = Settings::from("../Settings").unwrap();
             let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
             let ia = ItemActor::new(ct.1).start();
 
@@ -232,7 +256,7 @@ mod tests {
                 .route("/items", web::get().to(search_items))
         });
 
-        match srv.get("/items?q=True+Iron+Ore").send().await {
+        match srv.get("/items?p=True+Iron+Ore").send().await {
             Ok(mut icr) => {
                 assert_eq!(icr.status(), StatusCode::OK);
                 match icr.json().await {
@@ -254,11 +278,12 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_symbols_get_item_e2e() {
-
-        //FIXME refactor to a function for reuse in test & main
-        let srv = test::start(|| {
-            let settings = Settings::from("../Settings").unwrap();
-            let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
+        let settings = Settings::from("../Settings").unwrap();
+        let (_, mut con) = waw::db::redis_connect(settings.db_host.clone()).unwrap();
+        waw::db::store_item_metadata(&mut con, "../ref-data/items.csv")
+            .expect("Couldn't store item metadata");
+        let srv = test::start(move || {
+            let ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
             let ia = ItemActor::new(ct.1).start();
             App::new()
                 .data(Server {

@@ -1,5 +1,5 @@
 use crate::AsKey;
-use actix::{Actor, Addr, Arbiter, Context, Handler, Message, System};
+use actix::{Actor, Context, Handler, Message, System};
 use log::{error, info, trace};
 
 #[derive(Debug)]
@@ -65,7 +65,8 @@ impl Handler<StoreAuction> for StorageActor {
                     msg.auction_row.unit_price,
                     msg.auction_row.auction_id.to_string(),
                     msg.auction_row.item_id,
-                    msg.auction_row.quantity) {
+                    msg.auction_row.quantity,
+                ) {
                     Ok(_) => {
                         trace!("Stored {}", msg.auction_row.item_id);
                         StorageResult::Success

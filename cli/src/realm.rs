@@ -130,13 +130,12 @@ impl redis::FromRedisValue for Item {
             //         en_us: redis::from_redis_value(d[1])?
             //     })
             // },
-            
             redis::Value::Data(d) => {
-               panic!(format!("Data Item: {:?}", d));
-            },
+                panic!(format!("Data Item: {:?}", d));
+            }
             e => {
-               panic!(format!("Failed to map Item: {:?}", e));
-            },
+                panic!(format!("Failed to map Item: {:?}", e));
+            }
         }
     }
 }

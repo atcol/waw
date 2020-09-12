@@ -64,7 +64,7 @@ impl Settings {
             // Add in `./Settings.toml`
             .merge(config::File::with_name(&file))?
             // Add in settings from the environment (with a prefix of APP)
-            // E.g. `APP_DEBUG=1 ./target/app` would set the `debug` key
+            // E.g. `WAW_DEBUG=1 ./target/app` would set the `debug` key
             .merge(config::Environment::with_prefix("WAW"))?;
         settings.try_into()
     }
@@ -83,7 +83,7 @@ pub enum SubCmd {
     /// Continuously download auction house and other game data
     #[clap()]
     Sync(SyncOpts),
-    /// Load to a Redis instance using raw protocol messages (with `redis-cli --pipe`)
+    /// Load to a Redis instance using raw protocol messages (for `redis-cli --pipe`)
     Load,
 }
 

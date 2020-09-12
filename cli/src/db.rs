@@ -1,9 +1,14 @@
-use crate::{realm::Auction, AsKey, realm::Item};
-use log::{error, info};
+use crate::{realm::Auction, realm::Item, AsKey};
+use log::{error, info, trace};
 use redis::Connection;
 use redis::{Client, RedisError};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct InitRefData {
+    watchlist: Vec<u64>,
+}
 
 pub fn redis_connect(db_host: String) -> Result<(Client, Connection), RedisError> {
     let client: Client = Client::open(format!("redis://{}/", db_host)).unwrap();
@@ -63,6 +68,23 @@ fn sanitise_name(name: String) -> String {
     format!("{}", PUNCT_RE.replace_all(&name.to_ascii_lowercase(), "_")).replace(' ', "_")
 }
 
+/// Load the watchlist from the given file and store it
+pub fn store_watchlist(
+    con: &mut redis::Connection,
+    path: &'static str,
+) -> Result<u64, redis::RedisError> {
+    let init = std::fs::read_to_string(path).expect("Unable to read file");
+    let res: InitRefData = serde_json::from_str(&init).expect("Unable to parse");
+    let mut cmd = redis::cmd("SADD");
+    res.watchlist
+        .into_iter()
+        .fold(cmd.arg("watchlist"), |c, id| { 
+            trace!("Store watchlist {} {}", String::from_utf8(c.get_packed_command()).unwrap(), id); 
+            c.arg(id.to_string()) 
+        })
+        .query::<u64>(con)
+}
+
 pub fn store_item_metadata(
     con: &mut Connection,
     path: &'static str,
@@ -104,10 +126,9 @@ pub fn get_item_metadata(
         .take(1)
         .map(|m| Item {
             id: m.get("id").unwrap().parse().unwrap(),
-            en_us: m.get("en_us").unwrap().clone()
+            en_us: m.get("en_us").unwrap().clone(),
         })
-        .next()
-    )
+        .next())
 }
 
 pub fn get_item_metadata_by_name(
@@ -121,7 +142,7 @@ pub fn get_item_metadata_by_name(
         .next()
     {
         Some(id) => {
-            info!("Found id {}: for item {}", id, name);
+            trace!("Found id {}: for item {}", id, name);
             Ok(get_item_metadata(con, id.parse().unwrap())?)
         }
         None => Ok(None),
@@ -143,25 +164,23 @@ pub fn get_ids_for_item(con: &mut Connection, name: String) -> anyhow::Result<Ve
 pub fn search_ids_for_item(con: &mut Connection, name: String) -> anyhow::Result<Vec<Vec<String>>> {
     let search_term = format!("ids:item:{}*", sanitise_name(name.clone()));
     info!("Item id search by key {}", search_term);
-    let keys = redis::cmd("keys").arg(search_term.clone())
+    let keys = redis::cmd("keys")
+        .arg(search_term.clone())
         .query::<Vec<String>>(con)?;
     info!("Item id search results: {:?}", keys);
-    Ok(keys.into_iter().filter_map(|key| {
-        info!("Found key for item {} search: {}", search_term, key);
-        match redis::pipe()
-            .zrevrange(key, -1, -1)
-            .query::<Vec<Vec<String>>>(con) {
-                Ok(v) => {
-                    Some(v.into_iter()
-                    .flatten()
-                    .collect())
-                }
-                Err(_) => {
-                    None
-                }
+    Ok(keys
+        .into_iter()
+        .filter_map(|key| {
+            trace!("Found key for item {} search: {}", search_term, key);
+            match redis::pipe()
+                .zrevrange(key, -1, -1)
+                .query::<Vec<Vec<String>>>(con)
+            {
+                Ok(v) => Some(v.into_iter().flatten().collect()),
+                Err(_) => None,
             }
-    })
-    .collect())
+        })
+        .collect())
 }
 
 pub fn store_auction(
@@ -204,7 +223,9 @@ mod tests {
         let settings = crate::Settings::from("../Settings.toml").expect("Couldn't load settings");
         let (_, mut con) =
             crate::db::redis_connect(settings.db_host).expect("Couldn't connect to redis");
-        crate::db::store_item_metadata(&mut con, "../items.csv").unwrap();
+        crate::db::store_watchlist(&mut con, "../ref-data/init.json")
+            .expect("Couldn't store watchlist");
+        crate::db::store_item_metadata(&mut con, "../ref-data/items.csv").unwrap();
 
         // Make sure we loaded stuff
         let ids: Vec<String> = redis::cmd("KEYS")
@@ -229,7 +250,8 @@ mod tests {
         let item_ids = crate::db::get_ids_for_item(&mut con, "True Iron Ore".to_string()).unwrap();
         assert_eq!(item_ids.len(), 1);
 
-        let x = crate::db::get_item_metadata_by_name(&mut con, "True Iron Ore".to_string()).unwrap();
+        let x =
+            crate::db::get_item_metadata_by_name(&mut con, "True Iron Ore".to_string()).unwrap();
         assert!(x.is_some());
         assert_eq!(
             x.unwrap(),
