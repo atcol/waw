@@ -203,7 +203,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let settings = Settings::new().unwrap();
         let mut ct = waw::db::redis_connect(settings.db_host.clone()).unwrap();
-        waw::db::store_watchlist(&mut ct.1, "../ref-data/init.json")
+        waw::db::store_watchlist(&mut ct.1, "ref-data/init.json")
             .expect("Couldn't store watchlist");
         waw::db::store_item_metadata(&mut ct.1, "../ref-data/items.csv").expect("Couldn't store item metadata");
         let ia = ItemActor::new(ct.1).start();

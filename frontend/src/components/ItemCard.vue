@@ -43,15 +43,6 @@
           stroke-linecap="round"
         ></v-sparkline>
       </v-sheet>
-      <span class="caption grey--text font-weight-light" @mouseover="hover = true" @mouseleave="hover = false">
-        <v-icon>mdi-arrow-down</v-icon>{{ min[1] }}
-        <span v-if="hover">{{ new Date(max[0] * 1000).toISOString() }}</span>
-      </span>
-      <v-divider vertical></v-divider>
-      <span class="caption grey--text font-weight-light" @mouseover="hover = true" @mouseleave="hover = false">
-        <v-icon>mdi-arrow-up</v-icon>{{ max[1] }}
-        <span v-if="hover">{{ new Date(max[0] * 1000).toISOString() }}</span>
-      </span>
     </v-card-text>
     <div :id="`chart_${id}`" />
   </v-card>
