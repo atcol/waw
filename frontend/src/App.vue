@@ -47,9 +47,12 @@
       </v-list>
     </v-navigation-drawer>
     <v-main>
-      <v-container fill-height>
-        <v-row align="top" justify="center">
-          <v-col class="text-center">
+      <v-container align="top" class="fill-height">
+        <v-row align="start" justify="center">
+          <add-watchlist-form />
+        </v-row>
+        <v-row align="start" justify="center">
+          <v-col align="start" class="text-center">
             <watchlist-table v-if="chartData !== undefined" v-bind:items="chartData" />
           </v-col>
         </v-row>
@@ -67,7 +70,11 @@
 import Vue from "vue";
 import ItemCard from "./components/ItemCard.vue";
 import WatchlistTable from "./components/WatchlistTable.vue";
+import AddWatchlistForm from "./components/AddWatchlistForm.vue";
 import * as d3 from "d3";
+import Vuelidate from 'vuelidate'
+
+Vue.use(Vuelidate)
 
 const symbols = Vue.observable([]);
 fetch("http://winston:8080/watchlist")
@@ -86,6 +93,7 @@ export default Vue.extend({
   name: "App",
 
   components: {
+    "add-watchlist-form": AddWatchlistForm,
     "item-card": ItemCard,
     "watchlist-table": WatchlistTable
   },

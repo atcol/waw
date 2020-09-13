@@ -4,15 +4,15 @@
     class="mt-4 mx-auto"
     max-width="400"
   >
-    
-
-    <v-card-text class="pt-0">
+    <v-card-title>
       <div class="title font-weight-medium mb-2">{{ name }} ({{ id }})</div>
-      <v-divider class="my-4"></v-divider>
+    </v-card-title>
+    <v-divider class="my-4"></v-divider>
+    <v-card-text class="pt-0">
       <v-list dense>
           <v-list-item>
             <v-list-item-content >Price:</v-list-item-content>
-            <v-list-item-content class="align-end" ><v-chip dense color="blue" outlined>{{ data[0].value }}</v-chip></v-list-item-content>
+            <v-list-item-content class="align-end" ><v-chip dense color="blue" outlined>{{ `${toGold(data[0].value)}g ${toSilver(data[0].value)}s` }}</v-chip></v-list-item-content>
           </v-list-item>
           <v-list-item>
             <v-list-item-content >Timestamp:</v-list-item-content>
@@ -23,8 +23,16 @@
             <v-list-item-content class="align-end" >{{ max[1] }}</v-list-item-content>
           </v-list-item>
           <v-list-item>
+            <v-list-item-content ></v-list-item-content>
+            <v-list-item-content class="align-end" >{{ new Date(max[0] * 1000).toISOString() }}</v-list-item-content>
+          </v-list-item>
+          <v-list-item>
             <v-list-item-content >Low:</v-list-item-content>
             <v-list-item-content class="align-end" >{{ min[1] }}</v-list-item-content>
+          </v-list-item>
+          <v-list-item>
+            <v-list-item-content ></v-list-item-content>
+            <v-list-item-content class="align-end" >{{ new Date(min[0] * 1000).toISOString() }}</v-list-item-content>
           </v-list-item>
         </v-list>
       <v-sheet
@@ -65,6 +73,18 @@ export default Vue.extend({
       chartId: this.id,
       latestPrice: this.data[this.data.length - 1].value,
       hover: false,
+    }
+  },
+
+  methods: {
+    toGold (val) {
+      return Math.floor(val / 1000);
+    },
+    toSilver (val) {
+      return val % 100;
+    },
+    toCopper (val) {
+      return val / 100;
     }
   },
 

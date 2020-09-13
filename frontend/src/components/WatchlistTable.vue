@@ -9,7 +9,7 @@
     hide-default-footer
   >
     <template v-slot:header>
-      <v-toolbar dark color="black darken-3" class="mb-1">
+      <v-toolbar dark color="black darken-3" class="mb-1" >
         <v-text-field
           v-model="search"
           clearable
@@ -21,21 +21,11 @@
         ></v-text-field>
         <template v-if="$vuetify.breakpoint.mdAndUp">
           <v-spacer></v-spacer>
-          <v-select
-            v-model="sortBy"
-            flat
-            solo-inverted
-            hide-details
-            :items="keys"
-            prepend-inner-icon="mdi-sort"
-            label="Sort by"
-          ></v-select>
-          <v-spacer></v-spacer>
           <v-btn-toggle v-model="sortDesc" mandatory>
-            <v-btn large depressed color="blue" :value="false">
+            <v-btn  depressed color="" :value="false">
               <v-icon>mdi-arrow-up</v-icon>
             </v-btn>
-            <v-btn large depressed color="blue" :value="true">
+            <v-btn depressed color="" :value="true">
               <v-icon>mdi-arrow-down</v-icon>
             </v-btn>
           </v-btn-toggle>
@@ -62,7 +52,7 @@
         <span class="grey--text">Items per page</span>
         <v-menu offset-y>
           <template v-slot:activator="{ on, attrs }">
-            <v-btn dark text color="primary" class="ml-2" v-bind="attrs" v-on="on">
+            <v-btn dark text color="black" class="ml-2" v-bind="attrs" v-on="on">
               {{ itemsPerPage }}
               <v-icon>mdi-chevron-down</v-icon>
             </v-btn>
@@ -81,10 +71,10 @@
         <v-spacer></v-spacer>
 
         <span class="mr-4 grey--text">Page {{ page }} of {{ numberOfPages }}</span>
-        <v-btn fab dark color="blue darken-3" class="mr-1" @click="formerPage">
+        <v-btn fab dark small color="darken-3" class="mr-1" @click="formerPage">
           <v-icon>mdi-chevron-left</v-icon>
         </v-btn>
-        <v-btn fab dark color="blue darken-3" class="ml-1" @click="nextPage">
+        <v-btn fab dark small color="darken-3" class="ml-1" @click="nextPage">
           <v-icon>mdi-chevron-right</v-icon>
         </v-btn>
       </v-row>
@@ -101,8 +91,8 @@ export default Vue.extend({
   data: function() {
     return {
       itemsPerPageArray: [4, 8, 12],
-      itemsPerPage: 4,
-      sortBy: "value",
+      itemsPerPage: 12,
+      sortBy: "name",
       sortDesc: "",
       search: "",
       filter: {},
@@ -118,7 +108,7 @@ export default Vue.extend({
       return Math.ceil(this.items.length / this.itemsPerPage);
     },
     filteredKeys() {
-      return this.keys.filter(key => key !== `Name`);
+      return this.keys.filter(key => key !== `name`);
     }
   },
   methods: {
