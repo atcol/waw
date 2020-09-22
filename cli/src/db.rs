@@ -55,7 +55,8 @@ where
 {
     info!("Get range for {}", item_md.to_key());
     redis::cmd("TS.RANGE")
-        .arg(item_md.to_key())
+    //FIXME this is fucked; encapsulate store & lookup in item obj?
+        .arg(format!("auc:{}", item_md.to_key()))
         .arg("-".to_string())
         .arg("+".to_string())
         .query::<redis::Value>(con)
