@@ -18,7 +18,7 @@ pub fn redis_connect(db_host: String) -> Result<(Client, Connection), RedisError
 
 pub async fn dump_redis_proto(auc: &Auction, ts: i64) -> Result<(), String> {
     let mut opt = String::new();
-    let key = &auc.item.to_key();
+    let key = format!("auc:{}", &auc.item.to_key());
     let auc_id = &auc.item.id.to_string();
     let item_id = &auc.item.id.to_string();
     let quant = &auc.quantity.to_string();

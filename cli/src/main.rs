@@ -16,10 +16,14 @@ use waw::db::dump_redis_proto;
 use waw::realm::{Auction, AuctionResponse, Realm};
 use waw::{get_session, Error, Opts, Settings, SubCmd};
 
+static COMPRESSED_DEPENDENCY_LIST: &[u8] = auditable::inject_dependency_list!();
+
 fn main() -> Result<(), Error> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
+
+    info!("{}", COMPRESSED_DEPENDENCY_LIST[0]);
     let _ = System::new("Waw");
     let sa_addr = waw::actors::StorageActor::default().start();
     let settings = Settings::new()?;

@@ -16,7 +16,7 @@
           </v-list-item>
           <v-list-item>
             <v-list-item-content >Timestamp:</v-list-item-content>
-            <v-list-item-content class="align-end" >{{ new Date(data[0].ts * 1000).toISOString() }}</v-list-item-content>
+            <v-list-item-content class="align-end" >{{ new Date(data[data.length - 1].ts * 1000).toISOString() }}</v-list-item-content>
           </v-list-item>
           <v-list-item>
             <v-list-item-content >High:</v-list-item-content>

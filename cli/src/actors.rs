@@ -1,5 +1,5 @@
 use crate::AsKey;
-use actix::{Actor, Context, Handler, Message, System};
+use actix::{Actor, Context, Handler, Message};
 use log::{error, info, trace};
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ impl AsKey for AuctionRow {
     }
 
     fn prefix(&self) -> Option<String> {
-        Some("items".to_string())
+        Some("auc:item".to_string())
     }
 }
 
@@ -55,8 +55,7 @@ impl Handler<StoreAuction> for StorageActor {
                 error!("Failed to connect to redis: {}", e);
                 StorageResult::Failed(format!("Redis connection error: {}", e))
             }
-            Ok((c, mut con)) => {
-                let c: &mut dyn redis::ConnectionLike = &mut con;
+            Ok((_, mut con)) => {
                 trace!("Storing: {:?}", msg.auction_row);
                 match crate::db::store_auction(
                     &mut con,

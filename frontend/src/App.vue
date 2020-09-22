@@ -28,12 +28,12 @@
           </template>
 
           <v-list-item
-            v-for="(symbol, i) in chartData"
+            v-for="(item, i) in watchlist"
             :key="String(i)"
             link
-            @click="$emit('show-chart-dialog', symbol)"
+            @click="$emit('show-chart-dialog', item)"
           >
-            <v-list-item-title v-text="symbol.name"></v-list-item-title>
+            <v-list-item-title v-text="item.name"></v-list-item-title>
           </v-list-item>
         </v-list-group>
         <v-list-item link>
@@ -53,7 +53,7 @@
         </v-row>
         <v-row align="start" justify="center">
           <v-col align="start" class="text-center">
-            <watchlist-table v-if="chartData !== undefined" v-bind:items="chartData" />
+            <watchlist-table v-if="watchlist !== undefined" v-bind:items="watchlist" />
           </v-col>
         </v-row>
       </v-container>
@@ -106,7 +106,7 @@ export default Vue.extend({
 
   data: () => {
     return {
-      chartData: symbols,
+      watchlist: symbols,
       searchResults: [],
       select: {},
       search: null,
