@@ -13,7 +13,7 @@ auditable-build = "0.1.0"
 [dependencies]
 auditable = "0.1.0"
 proptest = "0.10.1"
-tokio = { version = "0.2.22", features = ["full"] }
+tokio = { version = "1.8.4", features = ["full"] }
 serde_json = "1.0.57"
 reqwest = { version = "0.10.8", features = ["json"] }
 clap = "3.0.0-beta.1"
